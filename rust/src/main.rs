@@ -235,6 +235,10 @@ fn update(db_path: &str, root: &str, only: Option<&str>, full_stat: bool, worker
         .filter(|e| known.get(&e.path).is_none_or(|k| k.ident != e.ident || !k.done)).collect();
     let fresh: Vec<&Entry> = changed.iter().copied().filter(|e| known.get(&e.path).is_none_or(|k| k.ident != e.ident)).collect();
     let gone: Vec<&String> = known.keys().filter(|p| !present.contains(p.as_str()) && !was_gone.contains(*p)).collect();
+    // A path marked gone that is back, unchanged, is present again (a changed one is reset as fresh).
+    let returned: Vec<&str> = entries.iter()
+        .filter(|e| was_gone.contains(&e.path) && known.get(&e.path).is_some_and(|k| k.ident == e.ident))
+        .map(|e| e.path.as_str()).collect();
 
     // Moves and renames: a new path with the device, inode, size and mtime of a fully
     // identified row that is gone inherits that row.
@@ -274,6 +278,10 @@ fn update(db_path: &str, root: &str, only: Option<&str>, full_stat: bool, worker
             let mut g = tx.prepare("UPDATE files SET gone=1 WHERE path=?1")?;
             for p in &gone {
                 g.execute(params![p])?;
+            }
+            let mut back = tx.prepare("UPDATE files SET gone=0 WHERE path=?1")?;
+            for p in &returned {
+                back.execute(params![p])?;
             }
             let mut d = tx.prepare("INSERT INTO dirs (path, ino, mtime_ns, seen_unix, gone) VALUES (?1,?2,?3,?4,0)
                 ON CONFLICT(path) DO UPDATE SET ino=excluded.ino, mtime_ns=excluded.mtime_ns, seen_unix=excluded.seen_unix, gone=0")?;

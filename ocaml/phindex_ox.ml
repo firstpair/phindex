@@ -205,6 +205,9 @@ let update ~db_path ~root ~only ~full_stat ~workers ~progress ~batch =
   let fresh = List.filter (fun e -> match Hashtbl.find_opt known e.path with
     | None -> true | Some (id, _, _) -> id <> e.ident) changed in
   let gone = Hashtbl.fold (fun p _ acc -> if Hashtbl.mem present p || Hashtbl.mem was_gone p then acc else p :: acc) known [] in
+  (* A path marked gone that is back, unchanged, is present again (a changed one is reset as fresh). *)
+  let returned = List.filter (fun e -> Hashtbl.mem was_gone e.path &&
+    (match Hashtbl.find_opt known e.path with Some (id, _, _) -> id = e.ident | None -> false)) (Array.to_list entries) in
   (* Moves and renames: a new path with the device, inode, size and mtime of a
      fully identified row that is gone, here or in an earlier run, inherits it. *)
   (* Every vanished row with the same identity is marked gone (a file moved twice
@@ -239,6 +242,7 @@ let update ~db_path ~root ~only ~full_stat ~workers ~progress ~batch =
                                          D.INT e.dev; D.INT seen ]) fresh);
   with_stmt db "DELETE FROM metadata WHERE path=?1" (fun st -> List.iter (fun e -> run_stmt db st [ D.TEXT e.path ]) fresh);
   with_stmt db "UPDATE files SET gone=1 WHERE path=?1" (fun st -> List.iter (fun p -> run_stmt db st [ D.TEXT p ]) gone);
+  with_stmt db "UPDATE files SET gone=0 WHERE path=?1" (fun st -> List.iter (fun e -> run_stmt db st [ D.TEXT e.path ]) returned);
   let seen_dirs = Hashtbl.create (List.length visited) in
   with_stmt db "INSERT INTO dirs (path, ino, mtime_ns, seen_unix, gone) VALUES (?1,?2,?3,?4,0)
                 ON CONFLICT(path) DO UPDATE SET ino=excluded.ino, mtime_ns=excluded.mtime_ns, seen_unix=excluded.seen_unix, gone=0"
@@ -313,7 +317,7 @@ let update ~db_path ~root ~only ~full_stat ~workers ~progress ~batch =
   exec db "COMMIT";
   ignore (Sqlite3.finalize upd); ignore (Sqlite3.finalize meta);
   with_stmt db "INSERT INTO runs VALUES (?1,?2,?3,?4,?5,?6,?7,?8)" (fun st ->
-    run_stmt db st [ D.TEXT root; D.INT started; D.INT (now ()); D.INT (Int64.of_int (Array.length entries));
+    run_stmt db st [ D.TEXT scope; D.INT started; D.INT (now ()); D.INT (Int64.of_int (Array.length entries));
                      D.INT (Int64.of_int !hashed); D.INT !bytes; D.INT (Int64.of_int (List.length gone));
                      D.INT (Int64.of_int !errors) ]);
   Printf.eprintf "done: read %d files, %.1f GB, %d errors (%d stored SHA-256 mismatches); raw blocks %d, Lightroom %d, metadata %d, preserved %d\n%!"

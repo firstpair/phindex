@@ -90,6 +90,15 @@ fn moves_keep_identities_and_only_limits_the_walk() {
     let (read, _, moved) = run(&db, &root, &["--only", root.join("new").to_str().unwrap()]);
     assert_eq!((read, moved), (1, 1), "--only reads the new file and carries the moved one");
     assert_eq!(row(&db, &root.join("b/f1.txt")).1, 1, "the move's source outside --only is marked gone");
+
+    // Moved away and back to the same path, unchanged: present again, not read.
+    fs::rename(root.join("b/f2.txt"), root.join("f2.txt")).unwrap();
+    run(&db, &root, &[]);
+    assert_eq!(row(&db, &root.join("b/f2.txt")).1, 1);
+    fs::rename(root.join("f2.txt"), root.join("b/f2.txt")).unwrap();
+    let (read, _, _) = run(&db, &root, &[]);
+    assert_eq!(read, 0);
+    assert_eq!(row(&db, &root.join("b/f2.txt")).1, 0, "a returned file is no longer gone");
 }
 
 #[test]

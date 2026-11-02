@@ -67,7 +67,8 @@ cd rust && cargo build --release && cargo test --release
 ./target/release/phindex --db archive.sqlite --root /path/to/archive --only /path/to/archive/new-folder
 ```
 
-Progress is printed every minute (`--progress-secs`) to stderr. With hard-disk
+Progress is printed every minute (`--progress-secs`) to stderr. Workers take files
+in path order, so concurrent reads are of neighbouring files. With hard-disk
 arrays, watch the read rate and the request size: more workers help while the
 CPU limits, in particular for the Lightroom fingerprint's DNG decode, until the
 disks do.
@@ -80,6 +81,31 @@ git clone https://github.com/firstpair/phidentify && (cd phidentify/rust && carg
 PHIDENTIFY_FFI_LIBDIR=$PWD/phidentify/rust/target/release opam pin add phidentify ./phidentify --subpath ocaml
 cd ocaml && dune build && ./_build/default/phindex_ox.exe --db archive.sqlite --root /path/to/archive --workers 16
 ```
+
+## Aligning two trees
+
+`phindex align` accounts for every file under a left root in a right root, by
+identity rather than by name, so moved, renamed and metadata-edited copies are
+found:
+
+```sh
+./target/release/phindex align --left old.sqlite --left-root /old/foto \
+  --right new.sqlite --right-root /new/foto --out report/
+```
+
+Files are grouped into units: the files of one folder with the same name up to
+the first dot, such as a DNG or camera raw with its JPEG and XMP sidecar. A unit
+is matched as a whole: its raw first, and the rest follow it. Each left unit gets
+a kind (`dng`, `dng+jpeg`, `raw+jpeg`, `jpeg`, …), a status (`identical`,
+`metadata-differs`, `image-differs`, `partial`, `left-only`, or `not-indexed`
+while its files are unread) and flags (`moved`, `renamed`, `split`,
+`duplicates`). The report holds `summary.json`, `units.tsv`, `files.tsv`,
+`right-only.tsv` (new content, or copies of left content), and `dng-pairs.tsv`
+and `image-pairs.tsv`: absolute LEFT<TAB>RIGHT paths of matched files whose bytes
+differ, for [dng-compare](https://github.com/firstpair/dng-compare)'s `--pairs`.
+Each file's match is its strongest shared identity: SHA-256, then DNG raw blocks
+(with `xmp-only` when the preserved digest is equal too), image data, and
+Lightroom's fingerprint.
 
 ## Queries
 

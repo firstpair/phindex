@@ -4,6 +4,7 @@
 //! other's index.
 //!
 //!   phindex --db INDEX.sqlite --root DIR [--only SUBDIR] [--full-stat] [--workers N] [--progress-secs S]
+//!   phindex align --left A.sqlite --left-root DIR --right B.sqlite --right-root DIR --out REPORT_DIR  (see align.rs)
 //!
 //! Each file read records SHA-256, DNG raw blocks, Lightroom's fingerprint
 //! (supported DNGs), the metadata digest and compacted record, and the tiffgraph
@@ -21,6 +22,8 @@
 //! stats every file (catches a file rewritten in place under the same name).
 //! A new path whose device, inode, size and mtime equal a vanished, fully
 //! identified row inherits its identities (moves and renames) without a read.
+
+mod align;
 
 use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
@@ -378,14 +381,17 @@ fn update(db_path: &str, root: &str, only: Option<&str>, full_stat: bool, worker
 
     let opts = phidentify::Options { dng_blocks: true, lightroom: true, metadata: true, preserved_regions: None, dng_semantic: true,
                                      image_data: true };
-    let jobs: Vec<(String, Ident, bool, bool)> =
+    let mut jobs: Vec<(String, Ident, bool, bool)> =
         todo.iter().map(|e| (e.path.clone(), e.ident, upgrade.contains(&e.path), rewalk.contains(&e.path))).collect();
+    jobs.sort_unstable_by(|a, b| a.0.cmp(&b.0));
     let n_todo = jobs.len();
     let (tx, rx) = mpsc::sync_channel::<(String, i64, Result<Outcome, String>)>(256);
     let pool = rayon::ThreadPoolBuilder::new().num_threads(workers).build()?;
     let producer = std::thread::spawn(move || {
         pool.install(|| {
-            jobs.into_par_iter().for_each_with(tx, |tx, (path, before, upgrade, rewalk)| {
+            // In path order, so concurrent reads are of neighbouring files (short seeks on
+            // hard disks); a split range would send each worker to a distant part of the tree.
+            jobs.into_iter().par_bridge().for_each_with(tx, |tx, (path, before, upgrade, rewalk)| {
                 let r = if upgrade && !image_candidate(Path::new(&path)) {
                     Ok(Outcome::NotImage(rewalk.then(|| phidentify::semantic::strictest_file(Path::new(&path)))))
                 } else {
@@ -473,10 +479,10 @@ fn update(db_path: &str, root: &str, only: Option<&str>, full_stat: bool, worker
             let rate = bytes as f64 / secs;
             let eta = if rate > 0.0 { (total - bytes).max(0) as f64 / rate } else { 0.0 };
             let el = t0.elapsed().as_secs();
-            eprintln!("+{}h{:02}m {n}/{n_todo} files, {:.1}/{:.1} GB ({:.1}%), {:.0} MB/s, {errors} errors, ETA {:.0}h{:02.0}m; \
+            eprintln!("+{}h{:02}m {n}/{n_todo} files, {:.1}/{:.1} GB ({:.1}%), {:.0} MB/s, {errors} errors, ETA {}h{:02}m; \
                        raw blocks {cb}, Lightroom {cl}, metadata {cm}, preserved {cs}, image data {ci}, upgraded unread {cu}",
                       el / 3600, el % 3600 / 60, bytes as f64 / 1e9, total as f64 / 1e9, 100.0 * bytes as f64 / total.max(1) as f64,
-                      rate / 1e6, (eta / 3600.0).floor(), (eta % 3600.0) / 60.0);
+                      rate / 1e6, eta as u64 / 3600, eta as u64 % 3600 / 60);
         }
     }
     batch.commit()?;
@@ -490,6 +496,9 @@ fn update(db_path: &str, root: &str, only: Option<&str>, full_stat: bool, worker
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("align") {
+        return align::run(&args[2..]);
+    }
     let get = |flag: &str| args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned();
     let workers: usize = get("--workers").map(|w| w.parse()).transpose()?.unwrap_or(8);
     if workers == 0 {

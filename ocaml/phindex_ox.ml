@@ -160,10 +160,10 @@ let progress_line ~t0 ~n ~todo ~bytes ~total ~errors ~counts:(b, l, m, s, i, u) 
   let rate = Int64.to_float bytes /. Float.max el 1e-9 in
   let eta = if rate > 0. then Int64.to_float (Int64.sub total bytes) /. rate else 0. in
   let e = int_of_float el in
-  Printf.eprintf "+%dh%02dm %d/%d files, %.1f/%.1f GB (%.1f%%), %.0f MB/s, %d errors, ETA %.0fh%02.0fm; raw blocks %d, Lightroom %d, metadata %d, preserved %d, image data %d, upgraded unread %d\n%!"
+  Printf.eprintf "+%dh%02dm %d/%d files, %.1f/%.1f GB (%.1f%%), %.0f MB/s, %d errors, ETA %dh%02dm; raw blocks %d, Lightroom %d, metadata %d, preserved %d, image data %d, upgraded unread %d\n%!"
     (e / 3600) (e mod 3600 / 60) n todo (Int64.to_float bytes /. 1e9) (Int64.to_float total /. 1e9)
     (100. *. Int64.to_float bytes /. Float.max 1. (Int64.to_float total)) (rate /. 1e6) errors
-    (Float.of_int (int_of_float (eta /. 3600.))) (Float.rem eta 3600. /. 60.) b l m s i u
+    (int_of_float eta / 3600) (int_of_float eta mod 3600 / 60) b l m s i u
 
 let update ~db_path ~root ~only ~full_stat ~workers ~progress ~batch =
   check_features ();

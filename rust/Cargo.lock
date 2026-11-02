@@ -1058,6 +1058,7 @@ dependencies = [
  "phidentify",
  "rayon",
  "rusqlite",
+ "serde_json",
  "tempfile",
 ]
 

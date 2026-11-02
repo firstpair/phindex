@@ -1036,7 +1036,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 [[package]]
 name = "phidentify"
 version = "0.1.0"
-source = "git+https://github.com/firstpair/phidentify?rev=5843a96f8aabbb78f6805edb15bd9660e3898bf4#5843a96f8aabbb78f6805edb15bd9660e3898bf4"
+source = "git+https://github.com/firstpair/phidentify?rev=84033f81c191c2bb01d0a01133ec66457207fffa#84033f81c191c2bb01d0a01133ec66457207fffa"
 dependencies = [
  "anyhow",
  "dng-exiftool-ffi",

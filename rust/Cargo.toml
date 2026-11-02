@@ -15,7 +15,7 @@ path = "src/main.rs"
 anyhow = "1.0"
 flate2 = "1.1"
 mimalloc = "0.1"
-phidentify = { git = "https://github.com/firstpair/phidentify", rev = "5843a96f8aabbb78f6805edb15bd9660e3898bf4", features = ["lightroom", "metadata", "semantic"] }
+phidentify = { git = "https://github.com/firstpair/phidentify", rev = "84033f81c191c2bb01d0a01133ec66457207fffa", features = ["lightroom", "metadata", "semantic"] }
 rayon = "1.12"
 rusqlite = { version = "0.41", features = ["bundled"] }
 

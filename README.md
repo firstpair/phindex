@@ -2,7 +2,7 @@
 
 phindex builds and keeps up to date an index of every file under a directory
 tree, for example a photo archive or a backup volume, in one SQLite file. Each
-file is read once, and five separate identities from
+file is read once, and six separate identities from
 [phidentify](https://github.com/firstpair/phidentify) are recorded for it:
 
 | Column | Identity | Equal values mean |
@@ -12,6 +12,7 @@ file is read once, and five separate identities from
 | `lr_digest` | Lightroom Classic's original fingerprint (supported DNGs) | Lightroom's matcher pairs them |
 | `md_digest` | exiftool-rs metadata record, location left out | same metadata |
 | `dngsem_profile` + `preserved` | strictest tiffgraph grammar and Semantic Unison's `SDE/0-preserved` digest | only the XMP packet can differ (same profile) |
+| `image_data` | stored image bytes of a camera raw, TIFF or JPEG that is not a DNG | same image data; metadata such as a shifted capture time may differ |
 
 An identity that doesn't apply, or fails, leaves its column NULL and its reason
 in the matching `_err` column. It's never a match. The compacted metadata record
@@ -25,6 +26,10 @@ their SHA-256 and length.
   size, mtime or inode changed, or the identity definitions changed. Each row
   carries a revision stamp, and that stamp changes only when an identity's
   definition does.
+- **New identities don't mean a full re-read.** When `image_data` was added, rows
+  of the previous revision were upgraded in place: DNGs without a read, other
+  files by their first 16 bytes, and only JPEGs, TIFFs and non-DNG raws read
+  again in full.
 - **Quick walk.** Every directory's inode and mtime are stored. Adding, removing or
   renaming an entry changes its directory's mtime. So a rerun lists only changed
   directories (new folders, added or removed files) and takes the rest from the

@@ -1,0 +1,26 @@
+[package]
+name = "phindex"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+description = "Resumable photo-identity index of a directory tree in SQLite: one binary, N workers, every phidentify identity from one read"
+license = "MIT"
+repository = "https://github.com/firstpair/phindex"
+
+[[bin]]
+name = "phindex"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+flate2 = "1.1"
+mimalloc = "0.1"
+phidentify = { git = "https://github.com/firstpair/phidentify", rev = "5843a96f8aabbb78f6805edb15bd9660e3898bf4", features = ["lightroom", "metadata", "semantic"] }
+rayon = "1.12"
+rusqlite = { version = "0.41", features = ["bundled"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = "thin"

@@ -1,0 +1,9 @@
+; OxCaml or stock OCaml; phidentify picks its domain pool by switch.
+(executable
+ (name phindex_ox)
+ (public_name phindex-ox)
+ (libraries phidentify sqlite3 unix)
+ (foreign_stubs
+  (language c)
+  (names phindex_ox_stubs))
+ (link_flags (-cclib -lz)))

@@ -1,0 +1,23 @@
+opam-version: "2.0"
+name: "phindex"
+version: "0.1.0"
+synopsis: "phindex-ox: the OCaml/OxCaml photo-identity indexer"
+description: """
+The OCaml and OxCaml implementation of phindex. It writes the same SQLite index,
+with the same revision stamp, as the Rust phindex binary. It needs phidentify's
+OCaml package; see the README.
+"""
+maintainer: "Alexy Khrabrov"
+authors: ["Alexy Khrabrov"]
+license: "MIT"
+homepage: "https://github.com/firstpair/phindex"
+bug-reports: "https://github.com/firstpair/phindex/issues"
+depends: [
+  "ocaml" {>= "5.1"}
+  "dune" {>= "3.9"}
+  "phidentify"
+  "sqlite3"
+]
+build: [
+  ["dune" "build" "-p" name "-j" jobs]
+]

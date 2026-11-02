@@ -1,0 +1,7 @@
+rust/target/
+ocaml/_build/
+*.install
+.DS_Store
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

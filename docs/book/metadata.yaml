@@ -1,0 +1,11 @@
+title: phindex
+subtitle: An index of photo identities that is cheap to rerun
+author: Alexy Khrabrov
+language: en-US
+lang: en-US
+publisher: First Pair Press
+rights: Copyright 2026 Alexy Khrabrov. phindex is licensed under the MIT License.
+title_stem: phindex
+cover_image: cover/phindex-cover.png
+headboard_image: cover/phindex-headboard.png
+description: A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index.

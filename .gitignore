@@ -5,3 +5,4 @@ ocaml/_build/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+build/

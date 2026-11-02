@@ -8,7 +8,7 @@
   "css": "docs/book/reader.css",
   "stem": "phindex",
   "version": { "source": "literal", "value": "0.2.0" },
-  "edition": "preview",
+  "edition": "full",
   "dist": "dist",
   "buildDir": "build/book",
   "primaryFormat": "typst",

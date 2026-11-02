@@ -1,6 +1,6 @@
 slug: phindex
 shelf: photography, unix
-default_edition: preview
+default_edition: full
 
 # Publication contract
 
@@ -45,24 +45,26 @@ and push `dist/`.
 
 ## Publish
 
-The title is published as a **preview** edition. Publish only this title through
-the shared FirstPair publisher, dry run first:
+The title is published as a **full** edition (`edition: full` in `book.build.json`;
+it was listed as a preview before). Publish only this title through the shared
+FirstPair publisher, dry run first:
 
 ```sh
 cd "$HOME/src/firstpair"
 npm run library:publish -- "$HOME/src/phindex" \
   --slug phindex --title 'phindex' \
-  --description 'A resumable SQLite index of a directory tree with every phidentify identity from one read per file: reruns read only what changed, directory mtimes skip unchanged folders, and moves keep their identities. A Rust binary and an OCaml/OxCaml counterpart write the same index.' \
+  --description 'A resumable SQLite index of a directory tree with every phidentify identity from one read per file: reruns read only what changed, directory mtimes skip unchanged folders, moves keep their identities, and phindex align accounts for one archive in another by identity. A Rust binary and an OCaml/OxCaml counterpart write the same index.' \
   --kicker 'An archive index that is cheap to rerun' \
   --tags photography,dng,lightroom,sqlite,rust,ocaml,oxcaml \
-  --source https://github.com/firstpair/phindex \
+  --source https://github.com/firstpair/phindex --full \
   --dry-run --no-build --no-smoke --no-deploy --no-icloud
 ```
 
 then the same command without the dry-run flags. The shelves come from the
-`shelf:` header above; passing `--shelf` as well is refused as a conflict. Never
-pass `--full` without the user's explicit confirmation: it replaces the public
-preview with the full edition.
+`shelf:` header above; passing `--shelf` as well is refused as a conflict.
+`--full` selects the full edition. The first full publish replaces the public
+preview listing, so it runs only on the user's explicit confirmation; agents run
+the dry run only.
 
 Both repositories must be clean and pushed before uploading. Commit and push the
 FirstPair manifests (`book-uploads/blob-manifest.json`, `public/catalog.json`,

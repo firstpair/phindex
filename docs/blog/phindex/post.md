@@ -19,7 +19,7 @@ tags:
 
 An index of a photo archive is only useful if it is current. The day it falls behind, every answer it gives comes with an asterisk: this file has a copy on the backup, *as of the last time we looked*. And on an archive measured in terabytes, on spinning disks, "looking" means days of reading. If keeping the index current costs as much as building it, it will not be kept current, and then it is not an index but a historical document.
 
-[phindex](https://github.com/firstpair/phindex) is our attempt at an index that costs almost nothing to rerun. It walks a directory tree and stores, in one SQLite file, every identity that [phidentify](https://github.com/firstpair/phidentify) can compute for each file: the whole-file SHA-256, the DNG raw blocks, Lightroom Classic's fingerprint, the metadata record, and the digest of everything outside the XMP packet. Then, on every later run, it does as little work as it can prove is enough. The [manual](https://firstpair.org/books/phindex/) is now a preview on the First Pair Photography and Unix shelves.
+[phindex](https://github.com/firstpair/phindex) is our attempt at an index that costs almost nothing to rerun. It walks a directory tree and stores, in one SQLite file, every identity that [phidentify](https://github.com/firstpair/phidentify) can compute for each file: the whole-file SHA-256, the DNG raw blocks, Lightroom Classic's fingerprint, the metadata record, and the digest of everything outside the XMP packet. Then, on every later run, it does as little work as it can prove is enough. The [manual](https://firstpair.org/books/phindex/) is on the First Pair Photography and Unix shelves.
 
 ## What the index is for
 

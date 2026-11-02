@@ -95,14 +95,67 @@ transfer. Large requests mean long sequential reads, which hard disks do
 well. If the request size falls as workers rise, the readers are
 interleaving and the disks are seeking.</li>
 </ul>
-<p>On hard-disk arrays, start with as many workers as cores, compare the
-read rate and request size over a few minutes against a run with fewer
-workers, and keep the smaller number that gives the same files per
-second. The progress line’s MB/s is the indexer’s own view of the same
+<p>The progress line’s MB/s is the indexer’s own view of the same
 thing.</p>
-<h2 data-number="7.4"
+<h2 data-number="7.4" id="reading-in-path-order"><span
+class="header-section-number">7.4</span> Reading in path order</h2>
+<p>Which files the workers read at the same moment matters as much as
+how many workers there are. In 0.1.0 the Rust pool took the list of
+files with rayon’s <code>into_par_iter</code>, which splits a list into
+contiguous ranges and gives each thread its own range. With 16 workers
+that meant 16 readers in 16 distant parts of the tree, typically 16
+different folders years apart, all at once. Each worker’s file was
+contiguous on disk, but the disks served the 16 readers in turn, and
+every switch between them was a long seek.</p>
+<p>On a two-disk hard-disk RAID 0, <code>iostat</code> showed what that
+costs: about 368 transfers per second of about 0.5 MB each, nearly every
+one a seek, for about 175 to 181 MB/s in total, with the process using
+about 930% CPU. Now the files are sorted by path and handed out one at a
+time in that order, so the 16 workers read 16 neighbouring files of the
+same folder, and the heads move a short way between them. The same array
+then read at about 212 MB/s, with all workers in one folder, and the
+process’s CPU use fell to about 480%: the run had become disk-bound,
+which on hard disks is where it should be. phindex-ox already handed out
+consecutive batches of the sorted list and needed no change.</p>
+<h2 data-number="7.5" id="choosing---workers"><span
+class="header-section-number">7.5</span> Choosing
+<code>--workers</code></h2>
+<p>A worker does two things with each file, one after the other: it
+reads the whole file, and then it computes. The computing is the SHA-256
+and other digests, the metadata extraction, the tiffgraph walk, and for
+a supported DNG the full raw decode behind the Lightroom fingerprint,
+which is by far the most expensive step. A worker waiting on the disk
+uses no CPU; a worker decoding a DNG uses a whole core. So the right
+number of workers is the number that keeps whichever of the two is the
+bottleneck busy, and no more.</p>
+<p>Tell the two cases apart from the outside:</p>
+<ul>
+<li><strong>CPU-bound.</strong> The process’s CPU use, in
+<code>top</code> or Activity Monitor, is close to <code>--workers</code>
+× 100%: every worker is computing. The disks show spare capacity in
+<code>iostat</code>. More workers will help, up to the number of cores.
+This is the usual state in folders of DNGs.</li>
+<li><strong>Disk-bound.</strong> The process’s CPU use is well below
+<code>--workers</code> × 100%: workers are waiting for reads. In
+<code>iostat</code>, the disks’ transfers per second (tps) are near what
+the disks can do, and the kilobytes per transfer (KB/t) tell you whether
+those transfers are long sequential reads (large KB/t, good) or short
+ones between seeks (small KB/t, bad). More workers will not help, and on
+hard disks they can make the seeks worse.</li>
+</ul>
+<p>As a starting point on a four-disk hard-disk RAID 5, use 8 workers;
+such an array was observed at 264 to 350 MB/s with 8. Then watch for a
+few minutes: if the run is CPU-bound and the disks have room, add
+workers; if it is disk-bound with small transfers, try fewer and keep
+the smaller number that gives the same files per second.</p>
+<p>When several indexers share a machine, for example one run per
+volume, keep their workers’ total below the number of cores. Each run
+that becomes CPU-bound wants all its workers on cores, and if the totals
+exceed the cores, every run slows down, the decode-heavy ones most, and
+the machine has nothing left for anything else.</p>
+<h2 data-number="7.6"
 id="small-files-lower-mbs-not-files-per-second"><span
-class="header-section-number">7.4</span> Small files lower MB/s, not
+class="header-section-number">7.6</span> Small files lower MB/s, not
 files per second</h2>
 <p>An archive is rarely all large DNGs. Lightroom’s <code>.xmp</code>
 sidecars, Capture One’s <code>.cop</code> and <code>.cof</code> settings
@@ -114,14 +167,15 @@ change. That is not a slowdown, and adding workers will not bring the
 MB/s back. Judge progress on such folders by files per second, and
 expect the ETA, which is computed from bytes, to be optimistic while the
 indexer is among small files and pessimistic among large ones.</p>
-<h2 data-number="7.5" id="memory"><span
-class="header-section-number">7.5</span> Memory</h2>
+<h2 data-number="7.7" id="memory"><span
+class="header-section-number">7.7</span> Memory</h2>
 <p>Each worker holds a whole file in memory while identifying it (files
-up to 1 GiB; larger ones are hashed by streaming), and the Lightroom
-decode holds the decoded raw image as well, two bytes per sample. Peak
-memory therefore grows with the number of workers and the size of the
-largest files in flight. In the comparison above, 16 workers on that
-folder peaked at 2.3 GB for phindex and 3.5 GB for phindex-ox.</p>
+up to 1 GiB; larger ones are hashed by streaming and walked from disk),
+and the Lightroom decode holds the decoded raw image as well, two bytes
+per sample. Peak memory therefore grows with the number of workers and
+the size of the largest files in flight. In the comparison above, 16
+workers on that folder peaked at 2.3 GB for phindex and 3.5 GB for
+phindex-ox.</p>
 <p>The other memory question is the allocator. Metadata extraction
 through exiftool-rs makes many short-lived allocations of mixed sizes.
 Under the macOS system allocator, that pattern fragmented the heap in

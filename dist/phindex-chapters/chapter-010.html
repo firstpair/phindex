@@ -7,7 +7,7 @@
   <meta name="author" content="Alexy Khrabrov" />
   <meta name="dcterms.date" content="2026-11-02" />
   <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
-  <title>Testing</title>
+  <title>Aligning two trees</title>
   <style>
     div.sitenav { display: flex; flex-direction: row; flex-wrap: wrap; }
     span.navlink { flex: 1; }
@@ -112,43 +112,368 @@
 </div>
 <div class="sitenav">
 <span class="navlink">
-<span class="navlink-label">Next:</span> <a href="chapter-011.html" accesskey="n" rel="next">Licences</a>
+<span class="navlink-label">Next:</span> <a href="chapter-011.html" accesskey="n" rel="next">Testing</a>
 </span>
 <span class="navlink">
 <span class="navlink-label">Previous:</span> <a href="chapter-009.html" accesskey="p" rel="previous">Queries</a>
 </span>
 </div>
 </nav>
-<h1 data-number="9" id="testing"><span
-class="header-section-number">9</span> Testing</h1>
-<p>The integration tests in <a
-href="https://github.com/firstpair/phindex/blob/10d23761a37c0f520ad75b030da084680e706d71/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
-run the phindex binary on disposable synthetic trees in a temporary
-directory, with two workers:</p>
+<h1 data-number="9" id="aligning-two-trees"><span
+class="header-section-number">9</span> Aligning two trees</h1>
+<p>The containment query in the previous chapter answers one question:
+is every file’s exact bytes somewhere else? Real archives need a finer
+answer. A shoot copied to a new disk may have been renamed by date,
+sorted into other folders, had its capture times shifted, had its JPEGs
+re-rendered and its sidecars rewritten. A byte comparison calls all of
+that missing. <code>phindex align</code> instead accounts for every file
+under a <strong>left</strong> root in a <strong>right</strong> root by
+identity, file by file and photo by photo, and says for each what kind
+of match it found.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> align <span class="at">--left</span> old.sqlite <span class="at">--left-root</span> /old/foto <span class="dt">\</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--right</span> new.sqlite <span class="at">--right-root</span> /new/foto <span class="at">--out</span> report</span></code></pre></div>
+<p>The two roots must be indexed first; they may be in two index files
+or in the same one. <code>align</code> opens the indexes read-only and
+never reads a photo. It considers the rows under each root that are not
+gone, and skips names beginning with a dot, such as
+<code>.DS_Store</code> and AppleDouble files. On a real trial, a left
+tree of 1.7 million files was aligned with a right tree of 1.6 million
+in 24 seconds, using 1.6 GB of memory.</p>
+<h2 data-number="9.1" id="units"><span
+class="header-section-number">9.1</span> Units</h2>
+<p>A photo is rarely one file. A raw usually has a JPEG beside it, made
+by the camera, and an XMP sidecar written by an editor.
+<code>align</code> groups files into <strong>units</strong>: the files
+of one folder whose names are equal up to the first dot.
+<code>IMG_0001.RW2</code>, <code>IMG_0001.JPG</code> and
+<code>IMG_0001.xmp</code> in one folder are one unit,
+<code>IMG_0001</code>; the same names in another folder are another
+unit.</p>
+<p>Each file has a kind from its extension: <code>dng</code>;
+<code>raw</code> for the other camera raws (NEF, CR2, CR3, ARW, RW2,
+RAF, ORF, PEF, 3FR, IIQ and others); <code>jpeg</code>;
+<code>image</code> for TIFF, HEIC, PNG and PSD; <code>sidecar</code> for
+XMP sidecars; and <code>other</code> for everything else. A unit’s
+<strong>kind</strong> names its images in a fixed order, joined by
+<code>+</code>: <code>dng</code>, <code>dng+jpeg</code>,
+<code>raw</code>, <code>raw+jpeg</code>, <code>jpeg</code>,
+<code>jpeg+image</code> and so on. Sidecars ride along and do not appear
+in the kind; a unit with no image at all is <code>sidecar</code> or
+<code>other</code>. The kind separates cases that a count of files would
+mix up: a <code>dng</code> unit is a DNG alone, a <code>dng+jpeg</code>
+unit a DNG with its JPEG, and the report counts them apart.</p>
+<h2 data-number="9.2" id="how-a-unit-is-matched"><span
+class="header-section-number">9.2</span> How a unit is matched</h2>
+<p>Each left file is matched by the <strong>strongest identity it
+shares</strong> with some right file, in this order:</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Identity shared</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>identical</code></td>
+<td><code>sha256</code></td>
+<td>the same bytes</td>
+</tr>
+<tr>
+<td><code>xmp-only</code></td>
+<td><code>dng_blocks</code>, and <code>preserved</code> under the same
+<code>dngsem_profile</code></td>
+<td>a DNG whose copy differs only inside its XMP packet</td>
+</tr>
+<tr>
+<td><code>dng-metadata</code></td>
+<td><code>dng_blocks</code></td>
+<td>a DNG with the same raw data and some other difference, such as new
+previews</td>
+</tr>
+<tr>
+<td><code>image-metadata</code></td>
+<td><code>image_data</code></td>
+<td>a raw, TIFF or JPEG with the same image bytes and edited
+metadata</td>
+</tr>
+<tr>
+<td><code>lightroom</code></td>
+<td><code>lr_digest</code></td>
+<td>only Lightroom’s original fingerprint is shared</td>
+</tr>
+<tr>
+<td><code>unit-partner</code></td>
+<td>none</td>
+<td>the file’s counterpart, by kind, in the right unit its photo
+matched</td>
+</tr>
+</tbody>
+</table>
+<p>A unit is matched as a whole. Its members are taken in order of kind:
+the DNG first, then other raws, then JPEGs and other images, then
+sidecars and the rest. The first member that matches anything picks the
+unit’s <strong>target</strong>, the right unit its photo is in. Among
+several candidates of a tier, a member prefers the same relative path,
+then a candidate in the target unit, then the same file name, and then
+the first path in sort order. That is how the members follow their raw:
+when a camera JPEG has a byte-identical copy in some other folder, the
+copy in the raw’s unit wins, because it sits in the target.</p>
+<p>A member that shares no identity at all, but whose unit has a target,
+takes the target’s member of the same kind, if no member matched by
+identity has taken it, as <code>unit-partner</code>. A JPEG re-rendered
+from its raw, with different image bytes, is the usual case: nothing in
+it is shared, but it is plainly the same photo’s JPEG. A member not yet
+indexed never becomes a unit partner.</p>
+<h2 data-number="9.3" id="statuses-and-flags"><span
+class="header-section-number">9.3</span> Statuses and flags</h2>
+<p>Each left unit gets one status:</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Status</th>
+<th>When</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>identical</code></td>
+<td>every member matched with <code>identical</code></td>
+</tr>
+<tr>
+<td><code>metadata-differs</code></td>
+<td>every member matched, some with a weaker tier, but no image is a
+unit partner</td>
+</tr>
+<tr>
+<td><code>image-differs</code></td>
+<td>every member matched, and at least one image member (DNG, raw, JPEG
+or other image) only as a unit partner</td>
+</tr>
+<tr>
+<td><code>partial</code></td>
+<td>some members matched and some did not</td>
+</tr>
+<tr>
+<td><code>left-only</code></td>
+<td>no member matched, and every right row is indexed</td>
+</tr>
+<tr>
+<td><code>not-found-yet</code></td>
+<td>no member matched, but some right rows are not yet indexed, so a
+match may still appear</td>
+</tr>
+<tr>
+<td><code>not-indexed</code></td>
+<td>at least one member has not been indexed on the left</td>
+</tr>
+</tbody>
+</table>
+<p><code>image-differs</code> is reserved for images. A sidecar or
+settings file that matched only as a unit partner means its text
+changed, which is a metadata difference, and leaves the unit
+<code>metadata-differs</code>. An unread row is never reported as
+missing: on the left it makes the unit <code>not-indexed</code>, and on
+the right it turns <code>left-only</code> into
+<code>not-found-yet</code> until the right index is complete.</p>
+<p>Flags describe how the match was found, and a unit can have
+several:</p>
 <ul>
-<li><strong>Reruns read only what changed.</strong> A first run reads
-six files; an unchanged rerun reads none; a new nested folder is found
-by the quick walk and its one file read; a file rewritten in place is
-not read by the quick walk and is read by <code>--full-stat</code>, with
-a new SHA-256; a deleted file is marked gone and not counted again on
-the next run.</li>
-<li><strong>Moves keep identities, and <code>--only</code> limits the
-walk.</strong> Renaming a folder of three files reads nothing and
-reports three moved and three gone, with the SHA-256 carried to the new
-path. With <code>--only</code> on a new folder, the new file is read and
-a file moved into the folder from outside it is carried, and its old
-path, outside <code>--only</code>, is marked gone. A file moved away and
-then back to its old path, unchanged, is not read and is no longer
-marked gone.</li>
-<li><strong>Identities are recorded separately.</strong> For a text
-file, the SHA-256 is present, the DNG identities are absent, the
-metadata digest is present, the refused grammar leaves a reason in
-<code>dngsem_err</code>, and one metadata record is stored.</li>
+<li><code>moved</code>: the target unit is in another folder.</li>
+<li><code>renamed</code>: the target unit has another name.</li>
+<li><code>split</code>: some members matched files outside the target
+unit.</li>
+<li><code>duplicates</code>: some member had more than one candidate in
+its tier.</li>
+<li><code>right-has-more</code>: the target unit has more members than
+the left unit, such as an added sidecar.</li>
 </ul>
-<div class="sourceCode" id="cb1"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> rust <span class="kw">&amp;&amp;</span> <span class="ex">cargo</span> test <span class="at">--release</span></span></code></pre></div>
-<p>The equivalence of phindex and phindex-ox rests on comparing their
-databases on the same tree, as in the comparison above. Synthetic tests
-check the indexing logic; they do not survey real camera files, and they
-do not qualify the identities, which phidentify’s manual covers.</p>
+<h2 data-number="9.4" id="right-only-units"><span
+class="header-section-number">9.4</span> Right-only units</h2>
+<p>A right unit to which no left file was matched is listed as
+right-only, with its content: <code>new</code> when it holds something
+the left lacks; <code>copy</code> when every member’s SHA-256 also
+occurs on the left, as for a second copy of a left file in another
+folder; or <code>not-indexed</code> while any member is unread. New
+units are counted by kind.</p>
+<h2 data-number="9.5" id="the-report"><span
+class="header-section-number">9.5</span> The report</h2>
+<p><code>--out</code> names a directory, created if needed, which
+receives:</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>File</th>
+<th>Contents</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>summary.json</code></td>
+<td>file and unit counts per side, left units by kind and status, flag
+counts, left files by tier, right-only units by kind, copies, and unread
+counts; also printed to stdout</td>
+</tr>
+<tr>
+<td><code>units.tsv</code></td>
+<td>one line per left unit: unit, kind, status, flags, right unit, and
+each member’s extension with its tier</td>
+</tr>
+<tr>
+<td><code>files.tsv</code></td>
+<td>one line per left file: left path, right path, tier, and the number
+of candidates; relative to the roots</td>
+</tr>
+<tr>
+<td><code>right-only.tsv</code></td>
+<td>one line per right-only unit: unit, kind, content</td>
+</tr>
+<tr>
+<td><code>dng-pairs.tsv</code></td>
+<td>absolute <code>LEFT&lt;TAB&gt;RIGHT</code> paths of matched DNGs
+whose bytes differ</td>
+</tr>
+<tr>
+<td><code>image-pairs.tsv</code></td>
+<td>the same for matched raws, JPEGs and other images</td>
+</tr>
+</tbody>
+</table>
+<h2 data-number="9.6" id="from-alignment-to-raw-comparison"><span
+class="header-section-number">9.6</span> From alignment to raw
+comparison</h2>
+<p>An alignment says which files correspond and how; it does not look at
+pixels. For DNGs, <a
+href="https://github.com/firstpair/dng-compare">dng-compare</a> does: it
+compares raw samples and metadata of file pairs.
+<code>dng-pairs.tsv</code> is written in the format of its
+<code>--pairs</code> option, with absolute paths, so the pairs
+<code>align</code> found can be fed to it directly. With
+<code>--pairs-only</code>, dng-compare compares just those pairs and
+does not walk or name-match the roots:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> run python compare_dng.py /old/foto /new/foto <span class="dt">\</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--pairs</span> report/dng-pairs.tsv <span class="at">--pairs-only</span> <span class="at">--output</span> reports/aligned-dngs</span></code></pre></div>
+<p>Identical files are left out of the pairs files, since there is
+nothing to compare, and so are sidecars, whose differences the metadata
+records already show.</p>
+<h2 data-number="9.7" id="a-worked-example"><span
+class="header-section-number">9.7</span> A worked example</h2>
+<p>The integration test for <code>align</code>, in <a
+href="https://github.com/firstpair/phindex/blob/eaed355ba51a7f5af1b6824b0da477462822bb61/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>,
+builds two small synthetic trees of minimal RW2 and JPEG files and
+indexes both. The left folder <code>s1</code> holds five raw+JPEG units,
+<code>IMG_1</code> to <code>IMG_5</code>, a lone <code>IMG_6.JPG</code>,
+and an <code>IMG_7.JPG</code> whose row has not been read. On the
+right:</p>
+<ul>
+<li><code>IMG_1</code>’s two files moved, unchanged, to the folder
+<code>t1</code>;</li>
+<li><code>IMG_2</code>’s two files had their capture time shifted, which
+changes their metadata bytes but not their image data;</li>
+<li><code>IMG_3</code>’s raw stayed and its JPEG exists only in another
+folder, <code>other</code>;</li>
+<li><code>IMG_4</code> was renamed to <code>X_4</code>, unchanged, and a
+copy of its JPEG also sits in <code>dup</code>;</li>
+<li><code>IMG_5</code>’s raw is unchanged and its JPEG was re-rendered
+with different image data;</li>
+<li><code>IMG_6</code> is not there, and a new <code>IMG_9.JPG</code>
+is.</li>
+</ul>
+<p><code>units.tsv</code> then reads:</p>
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
+<thead>
+<tr>
+<th>Left unit</th>
+<th>Kind</th>
+<th>Status</th>
+<th>Flags</th>
+<th>Right unit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>s1/IMG_1</code></td>
+<td><code>raw+jpeg</code></td>
+<td><code>identical</code></td>
+<td><code>moved</code></td>
+<td><code>t1/IMG_1</code></td>
+</tr>
+<tr>
+<td><code>s1/IMG_2</code></td>
+<td><code>raw+jpeg</code></td>
+<td><code>metadata-differs</code></td>
+<td></td>
+<td><code>s1/IMG_2</code></td>
+</tr>
+<tr>
+<td><code>s1/IMG_3</code></td>
+<td><code>raw+jpeg</code></td>
+<td><code>identical</code></td>
+<td><code>split</code></td>
+<td><code>s1/IMG_3</code></td>
+</tr>
+<tr>
+<td><code>s1/IMG_4</code></td>
+<td><code>raw+jpeg</code></td>
+<td><code>identical</code></td>
+<td><code>renamed,duplicates</code></td>
+<td><code>s1/X_4</code></td>
+</tr>
+<tr>
+<td><code>s1/IMG_5</code></td>
+<td><code>raw+jpeg</code></td>
+<td><code>image-differs</code></td>
+<td></td>
+<td><code>s1/IMG_5</code></td>
+</tr>
+<tr>
+<td><code>s1/IMG_6</code></td>
+<td><code>jpeg</code></td>
+<td><code>left-only</code></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>s1/IMG_7</code></td>
+<td><code>jpeg</code></td>
+<td><code>not-indexed</code></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Both members of <code>IMG_2</code> matched as
+<code>image-metadata</code>. <code>IMG_4</code>’s JPEG had two identical
+candidates, the one beside <code>X_4.RW2</code> and the copy in
+<code>dup</code>; it chose the one in the target unit, and the unit is
+flagged <code>duplicates</code>. <code>IMG_5</code>’s JPEG shares no
+identity and matched as the unit partner of the raw, so the unit’s image
+differs. <code>image-pairs.tsv</code> lists three pairs,
+<code>IMG_2</code>’s two files and <code>IMG_5</code>’s JPEG, for a
+closer look. <code>right-only.tsv</code> lists <code>s1/IMG_9</code> as
+<code>new</code> and <code>dup/IMG_4</code> as a <code>copy</code> of
+left content; <code>other/IMG_3</code> is not right-only, since
+<code>IMG_3</code>’s JPEG matched there.</p>
 </body>
 </html>

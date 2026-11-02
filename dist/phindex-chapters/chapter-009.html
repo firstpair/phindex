@@ -112,7 +112,7 @@
 </div>
 <div class="sitenav">
 <span class="navlink">
-<span class="navlink-label">Next:</span> <a href="chapter-010.html" accesskey="n" rel="next">Testing</a>
+<span class="navlink-label">Next:</span> <a href="chapter-010.html" accesskey="n" rel="next">Aligning two trees</a>
 </span>
 <span class="navlink">
 <span class="navlink-label">Previous:</span> <a href="chapter-008.html" accesskey="p" rel="previous">Performance and tuning on hard disks</a>
@@ -204,7 +204,7 @@ class="sourceCode sql"><code class="sourceCode sql"><span id="cb5-1"><a href="#c
 <span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="co">-- files still to read (never identified, failed, or from an older revision)</span></span>
 <span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> <span class="fu">count</span>(<span class="op">*</span>) <span class="kw">FROM</span> files <span class="kw">WHERE</span> gone <span class="op">=</span> <span class="dv">0</span></span>
 <span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>  <span class="kw">AND</span> (sha256 <span class="kw">IS</span> <span class="kw">NULL</span> <span class="kw">OR</span> ids_rev <span class="kw">IS</span> <span class="kw">NOT</span></span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>       <span class="st">&#39;phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved&#39;</span>);</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>       <span class="st">&#39;phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1&#39;</span>);</span>
 <span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="co">-- the last runs</span></span>
 <span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> root, datetime(started_unix, <span class="st">&#39;unixepoch&#39;</span>) <span class="kw">AS</span> started,</span>

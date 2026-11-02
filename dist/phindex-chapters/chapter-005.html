@@ -194,8 +194,9 @@ kept</td>
 </tbody>
 </table>
 <p>Indexes cover <code>sha256</code>, <code>size</code>,
-<code>dng_blocks</code>, <code>lr_digest</code>, <code>md_digest</code>
-and <code>preserved</code>, so joins on any identity are fast.</p>
+<code>dng_blocks</code>, <code>lr_digest</code>, <code>md_digest</code>,
+<code>preserved</code> and <code>image_data</code>, so joins on any
+identity are fast.</p>
 <p>A row is <strong>complete</strong> when <code>sha256</code> is not
 NULL and <code>ids_rev</code> equals the running indexer’s revision
 stamp. Only complete rows are skipped on a rerun and only complete rows

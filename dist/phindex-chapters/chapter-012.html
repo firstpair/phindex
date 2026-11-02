@@ -7,7 +7,7 @@
   <meta name="author" content="Alexy Khrabrov" />
   <meta name="dcterms.date" content="2026-11-02" />
   <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
-  <title>Reference</title>
+  <title>Licences</title>
   <style>
     div.sitenav { display: flex; flex-direction: row; flex-wrap: wrap; }
     span.navlink { flex: 1; }
@@ -47,96 +47,25 @@
 </div>
 <div class="sitenav">
 <span class="navlink">
+<span class="navlink-label">Next:</span> <a href="chapter-013.html" accesskey="n" rel="next">Reference</a>
 </span>
 <span class="navlink">
-<span class="navlink-label">Previous:</span> <a href="chapter-011.html" accesskey="p" rel="previous">Licences</a>
+<span class="navlink-label">Previous:</span> <a href="chapter-011.html" accesskey="p" rel="previous">Testing</a>
 </span>
 </div>
 </nav>
-<h1 data-number="11" id="reference"><span
-class="header-section-number">11</span> Reference</h1>
-<table>
-<colgroup>
-<col style="width: 50%" />
-<col style="width: 50%" />
-</colgroup>
-<thead>
-<tr>
-<th>Item</th>
-<th>Value</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Version</td>
-<td>0.1.0</td>
-</tr>
-<tr>
-<td>Revision stamp</td>
-<td><code>phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved</code></td>
-</tr>
-<tr>
-<td>Metadata engine label</td>
-<td><code>exiftool-rs (via phidentify)</code></td>
-</tr>
-<tr>
-<td>Tables</td>
-<td><code>files</code>, <code>metadata</code>, <code>dirs</code>,
-<code>runs</code></td>
-</tr>
-<tr>
-<td>Commit interval</td>
-<td>every 500 results; the plan in one transaction before reading</td>
-</tr>
-<tr>
-<td>Journal mode</td>
-<td>WAL</td>
-</tr>
-<tr>
-<td>Defaults</td>
-<td><code>--workers 8</code>, <code>--progress-secs 60</code>,
-phindex-ox <code>--batch</code> = workers × 8</td>
-</tr>
-<tr>
-<td>Errors printed</td>
-<td>the first 50 per run</td>
-</tr>
-<tr>
-<td>In-memory limit</td>
-<td>1 GiB (phidentify); larger files get SHA-256 only</td>
-</tr>
-<tr>
-<td>Long strings in records</td>
-<td>over 1 KiB, as
-<code>long-sha256:&lt;hex&gt;:&lt;length&gt;</code></td>
-</tr>
-<tr>
-<td>Record compression</td>
-<td>raw deflate, no zlib header</td>
-</tr>
-<tr>
-<td>Rust</td>
-<td>1.99.0, edition 2024; rayon pool, one SQLite writer, mimalloc</td>
-</tr>
-<tr>
-<td>OCaml</td>
-<td>5.1 or later: stock OCaml (<code>Domain.spawn</code>) or OxCaml
-(<code>Domain.Safe.spawn</code>)</td>
-</tr>
-<tr>
-<td>Source</td>
-<td><a
-href="https://github.com/firstpair/phindex">github.com/firstpair/phindex</a></td>
-</tr>
-<tr>
-<td>Related projects</td>
-<td><a href="https://github.com/firstpair/phidentify">phidentify</a>, <a
-href="https://github.com/firstpair/tiffgraph">tiffgraph</a>, <a
-href="https://github.com/querygraph/semantic-unison">Semantic
-Unison</a>, <a
-href="https://github.com/firstpair/dng-compare">dng-compare</a></td>
-</tr>
-</tbody>
-</table>
+<h1 data-number="11" id="licences"><span
+class="header-section-number">11</span> Licences</h1>
+<p>The phindex source is MIT. The binaries link third-party code under
+other licences, through phidentify:</p>
+<ul>
+<li><strong>rawler</strong>, under LGPL-2.1, decodes raw samples for the
+Lightroom fingerprint.</li>
+<li><strong>exiftool-rs</strong>, under GPL-3.0-or-later, extracts the
+metadata record, through dng-compare’s FFI crate.</li>
+</ul>
+<p>Built phindex and phindex-ox binaries are therefore covered by the
+GPL. phindex only reads the indexed tree; it writes only its SQLite
+file.</p>
 </body>
 </html>

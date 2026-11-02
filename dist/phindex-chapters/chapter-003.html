@@ -63,11 +63,12 @@ file the index records where it is, its size, mtime, inode and device,
 and a set of <strong>identities</strong> computed by <a
 href="https://github.com/firstpair/phidentify">phidentify</a>: the
 whole-file SHA-256, the DNG encoded raw blocks, the Lightroom Classic
-original fingerprint, the metadata record digest, and the tiffgraph
-grammar with the preserved digest. All of them come from one
-identification of the file: phidentify reads it into memory once and
-takes every identity it can from those bytes, and checks that the file
-did not change while it worked.</p>
+original fingerprint, the metadata record digest, the tiffgraph grammar
+with the preserved digest, and the image data of camera raws, TIFFs and
+JPEGs that are not DNGs. All of them come from one identification of the
+file: phidentify reads it into memory once and takes every identity it
+can from those bytes, and checks that the file did not change while it
+worked.</p>
 <p>The index exists to answer archive questions without reading the
 archive again. Which of these files have a byte-identical copy on the
 backup? Which DNGs differ from their copy only in their XMP packet?
@@ -77,8 +78,13 @@ where reading a multi-terabyte tree takes days.</p>
 <p>So the index has to be cheap to keep current. Most of this manual is
 about that: a rerun reads only files that are new, changed or
 unfinished, finds changed directories from their mtimes without listing
-the rest, carries identities across moves and renames, and resumes after
-an interruption where it stopped.</p>
+the rest, carries identities across moves and renames, resumes after an
+interruption where it stopped, and, when a new identity is added,
+upgrades the existing rows while reading as few files as it can.</p>
+<p>Once two trees are indexed, <code>phindex align</code> accounts for
+every file of one in the other by identity rather than by name, so
+copies that were moved, renamed or had their metadata edited are still
+found. It reads only the two indexes, never the files.</p>
 <h2 data-number="2.1" id="the-identity-columns"><span
 class="header-section-number">2.1</span> The identity columns</h2>
 <p>Every identity has its own column in the <code>files</code> table,
@@ -138,6 +144,13 @@ for the reason.</p>
 layout</td>
 </tr>
 <tr>
+<td><code>image_data</code>, <code>image_err</code></td>
+<td>stored image bytes of a camera raw, TIFF or JPEG that is not a
+DNG</td>
+<td>every file</td>
+<td>same image bytes in the same order; metadata may differ</td>
+</tr>
+<tr>
 <td><code>ids_rev</code></td>
 <td>the revision stamp of the identity definitions</td>
 <td>every identified file</td>
@@ -151,7 +164,8 @@ manual does not repeat those definitions. In short:</p>
 <ul>
 <li><strong><code>sha256</code></strong> is the only identity that
 proves two files are the same bytes. Files over 1 GiB get a streamed
-SHA-256 and nothing else that needs the bytes in memory.</li>
+SHA-256, their metadata record and the tiffgraph walk from disk, and
+nothing that needs the bytes in memory.</li>
 <li><strong><code>dng_blocks</code></strong> hashes the encoded raw
 image data of a DNG and its encoding tags, without offsets, XMP,
 previews or maker notes. A keyword edit cannot change it; a flipped raw
@@ -175,10 +189,73 @@ it.</li>
 that packet, with the file size and the packet’s position bound in. Two
 files with equal <code>preserved</code> values under the same
 <code>dngsem_profile</code> can differ only inside the packet.</li>
+<li><strong><code>image_data</code></strong> hashes only the stored
+image bytes of a file that is not a DNG, as the next section
+explains.</li>
 </ul>
 <h2 data-number="2.2"
+id="image-data-an-identity-that-survives-metadata-edits"><span
+class="header-section-number">2.2</span> Image data: an identity that
+survives metadata edits</h2>
+<p><code>dng_blocks</code> lets two DNGs agree although their metadata
+differs. Until 0.2.0 nothing did the same for the other files of an
+archive: a NEF, an ARW or a JPEG whose EXIF had been edited agreed with
+its original only on the Lightroom fingerprint, which phidentify
+computes only for DNGs, so for those files nothing agreed at all.
+<code>image_data</code>, phidentify’s sixth identity, fills that gap. It
+hashes the bytes that hold the picture and leaves out the bytes that
+describe it:</p>
+<ul>
+<li><strong>TIFF and the TIFF-based raws</strong> (NEF, CR2, ARW, 3FR,
+PEF, ORF and others, and BigTIFF): the strip or tile payloads of every
+IFD, in the main chain and in its SubIFDs, IFD by IFD in walk order,
+each with its byte counts. The tag tables, EXIF and maker notes, which
+say where things are and what they mean, are not hashed; only what the
+strip and tile offsets point to is.</li>
+<li><strong>Panasonic RW2</strong>: its raw data is named by
+RawDataOffset (tag 280), with no byte counts, and runs to the end of the
+file; that span is taken.</li>
+<li><strong>Fujifilm RAF</strong>: the CFA section whose offset and
+length the RAF header gives.</li>
+<li><strong>JPEG</strong>: the primary image’s frame header, tables and
+entropy-coded scans, that is every segment from SOI to EOI except the
+APPn segments (EXIF, XMP, ICC profiles, embedded thumbnails) and
+comments. Anything after EOI, such as a trailer some cameras and phones
+append, is left out.</li>
+</ul>
+<p>Two files have equal <code>image_data</code> exactly when those bytes
+are equal, in the same order. A metadata edit that leaves the image
+bytes in place keeps the value; re-encoding, recompressing or rewriting
+a preview strip changes it. phidentify checked this on real files:
+shifting the capture time of a TIFF, an ARW, an RW2 and a JPEG with
+ExifTool changed each one’s whole-file SHA-256 and left its
+<code>image_data</code> equal. ExifTool cannot write 3FR, so that format
+was not part of the test.</p>
+<p>Some files are refused, with a reason in <code>image_err</code>:</p>
+<ul>
+<li><strong>DNGs</strong>, with
+<code>DNG: the raw-block identity applies instead</code>. A DNG’s strips
+include the previews Lightroom regenerates when it saves metadata, so an
+image-data digest of a DNG would change with a metadata edit;
+<code>dng_blocks</code> hashes only the primary raw data and is the
+right identity for DNGs.</li>
+<li><strong>Files that are not a TIFF-family file or JPEG</strong>, with
+<code>not a TIFF-family file or JPEG</code>: CR3, HEIC and other
+ISO-media containers, videos, sidecars, text. The decision is made from
+the first 16 bytes, which is what makes the upgrade described under
+<em>Incremental behaviour</em> cheap.</li>
+</ul>
+<p>Why it matters: the commonest edit to a set of camera files is a
+capture-time shift, made when the camera clock was wrong or in another
+time zone. It rewrites a few bytes of EXIF in every file, so every
+whole-file SHA-256 changes, and a byte-for-byte comparison against an
+unshifted copy says that nothing is backed up. With
+<code>image_data</code> the shifted copy and the original still agree,
+and <code>phindex align</code> can pair them and say that only their
+metadata differs.</p>
+<h2 data-number="2.3"
 id="three-states-and-never-a-match-on-failure"><span
-class="header-section-number">2.2</span> Three states, and never a match
+class="header-section-number">2.3</span> Three states, and never a match
 on failure</h2>
 <p>Each identity column is in one of three states:</p>
 <table>
@@ -230,8 +307,8 @@ be read or because it changed while it was being read, keeps
 printed as an <code>ERROR</code> line on stderr (the first 50 of a run
 are printed) and counted in the run’s errors. It is read again on the
 next run.</p>
-<h2 data-number="2.3" id="where-it-fits"><span
-class="header-section-number">2.3</span> Where it fits</h2>
+<h2 data-number="2.4" id="where-it-fits"><span
+class="header-section-number">2.4</span> Where it fits</h2>
 <p>phindex is the part of the photo-archive work that remembers. The
 other parts compute, compare and transfer:</p>
 <ul>
@@ -274,8 +351,8 @@ engine. Its manual is on the <a
 href="https://firstpair.org/books/dng-compare/">First Pair
 shelf</a>.</li>
 </ul>
-<h2 data-number="2.4" id="what-it-is-not"><span
-class="header-section-number">2.4</span> What it is not</h2>
+<h2 data-number="2.5" id="what-it-is-not"><span
+class="header-section-number">2.5</span> What it is not</h2>
 <ul>
 <li><strong>Not a writer.</strong> phindex only reads the indexed tree.
 It writes nothing but its SQLite file.</li>

@@ -68,12 +68,15 @@ directly, with every identity requested, including the tiffgraph walk
 through tiffgraph’s Rust crate, so the walk and every digest are taken
 from the same in-memory bytes.</p>
 <p>Identification runs on a rayon pool of <code>--workers</code>
-threads. Each worker identifies a file, re-stats it, and sends the
-result over a bounded channel of 256 results to a single SQLite writer
-on the main thread. The writer compacts and deflates the metadata
-record, writes the row, commits every 500 results, and prints progress
-on time even when no result has arrived. The binary uses mimalloc as its
-global allocator.</p>
+threads. The files to read are sorted by path and handed to the pool one
+at a time, in that order (rayon’s <code>par_bridge</code> over the
+sorted list), so the workers are always reading neighbouring files; the
+chapter on hard disks explains why that matters. Each worker identifies
+a file, re-stats it, and sends the result over a bounded channel of 256
+results to a single SQLite writer on the main thread. The writer
+compacts and deflates the metadata record, writes the row, commits every
+500 results, and prints progress on time even when no result has
+arrived. The binary uses mimalloc as its global allocator.</p>
 <h2 data-number="6.2" id="phindex-ox-ocaml-stock-and-oxcaml"><span
 class="header-section-number">6.2</span> phindex-ox: OCaml, stock and
 OxCaml</h2>
@@ -98,15 +101,15 @@ Rust identification. Nothing non-portable crosses domains. The C stubs
 release the OCaml runtime lock while Rust hashes and while the walker
 reads, so the domains work in parallel under stock OCaml and under
 OxCaml alike.</li>
-<li><strong>Work is handed out in batches.</strong> phindex-ox takes
-<code>--batch</code> files at a time (by default eight per worker) and
-passes them to the pool, which spawns its domains for that batch; each
-domain takes the next file from the atomic counter until the batch is
-done, and the results come back in input order. The writer then writes
-the batch, commits once 500 or more results are pending, and checks
-whether a progress line is due. The batch size trades the cost of
-spawning domains against the time a slow file can hold a batch
-open.</li>
+<li><strong>Work is handed out in batches, in order.</strong> phindex-ox
+takes <code>--batch</code> consecutive files at a time (by default eight
+per worker) and passes them to the pool, which spawns its domains for
+that batch; each domain takes the next file from the atomic counter
+until the batch is done, and the results come back in input order. The
+writer then writes the batch, commits once 500 or more results are
+pending, and checks whether a progress line is due. The batch size
+trades the cost of spawning domains against the time a slow file can
+hold a batch open.</li>
 </ul>
 <p>Rust allocations inside phidentify’s C library use mimalloc; the
 OCaml heap is the OCaml runtime’s own.</p>
@@ -126,21 +129,46 @@ which the metadata digest leaves out.</li>
 phindex-ox took 25 seconds and 3.5 GB.</li>
 </ul>
 <p>Equal results are the point: the identities do not depend on which
-runtime asked for them. One case is known to be open and untested: a
-TIFF or DNG over 1 GiB. phidentify’s Rust core holds files up to 1 GiB
-in memory, so for a larger file phindex reports
-<code>file over the in-memory limit</code> in <code>dngsem_err</code>,
-while phindex-ox’s walk reads through its own file descriptor and may
-accept the file and record a profile. The comparison folder held no such
-file, so on those files the two indexes may disagree in
-<code>dngsem_profile</code>, <code>dngsem_err</code> and the
-<code>preserved</code> columns. The comparison measured totals and did
-not attribute the difference in time and memory. Two structural
-differences are the obvious candidates: phindex streams results from a
-pool that never stops, while phindex-ox spawns domains per batch and
-waits for each batch’s slowest file before the next begins. No stock
-OCaml timing was taken, so the comparison says nothing about stock
-OCaml’s speed relative to OxCaml’s.</p>
+runtime asked for them. For 0.2.0 the check was repeated on real folders
+with <code>image_data</code>: phindex and phindex-ox wrote identical
+rows when indexing the folders fresh and when upgrading them from the
+previous revision. The comparison measured totals and did not attribute
+the difference in time and memory. Two structural differences are the
+obvious candidates: phindex streams results from a pool that never
+stops, while phindex-ox spawns domains per batch and waits for each
+batch’s slowest file before the next begins. No stock OCaml timing was
+taken, so the comparison says nothing about stock OCaml’s speed relative
+to OxCaml’s.</p>
+<h2 data-number="6.4" id="files-over-1-gib"><span
+class="header-section-number">6.4</span> Files over 1 GiB</h2>
+<p>phidentify holds a file in memory to identify it only up to 1 GiB. A
+larger file, typically a video or a large scan, gets a streamed SHA-256
+and its metadata record, and the identities that need the bytes in
+memory report <code>file over the in-memory limit</code>. The tiffgraph
+walk does not need them: it reads only the file’s header and IFDs, at
+known offsets.</p>
+<p>The 0.1.0 manual listed this as an open item. phindex-ox’s walk had
+always run on positional reads from its own file descriptor, so for a
+file over 1 GiB it recorded a profile or a grammar’s refusal, while
+phindex, whose walk ran over the in-memory bytes, recorded
+<code>file over the in-memory limit</code> in <code>dngsem_err</code>;
+on such files the two indexes could disagree. phidentify’s Rust core now
+walks a file over the limit from disk with tiffgraph’s
+<code>FileReader</code>, the Rust counterpart of what the OCaml package
+does, so both indexers record the same <code>dngsem_profile</code> or
+reason. The <code>preserved</code> digest and <code>image_data</code>
+still need the bytes in memory and report the limit in both.</p>
+<p>Rows an older phindex build wrote for such files still carry the old
+reason. The upgrade from the previous revision redoes their walk without
+a full read: a row of the previous revision whose
+<code>dngsem_err</code> is <code>file over the in-memory limit</code>,
+and whose first bytes rule out image data, gets its tiffgraph walk run
+from disk alongside its <code>image_err</code>. A 3 GB AVI, for example,
+is settled by its first 16 bytes and a walk of its header, not by
+reading 3 GB. A candidate over the limit, such as a huge TIFF, is
+identified in full, which includes the walk from disk.</p>
+<h2 data-number="6.5" id="which-to-use"><span
+class="header-section-number">6.5</span> Which to use</h2>
 <p>For production runs, use <code>phindex</code>. Use
 <code>phindex-ox</code> when you want the indexer in OCaml, and as a
 cross-check: run both on a sample, then compare the two databases column

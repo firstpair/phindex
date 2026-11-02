@@ -138,6 +138,9 @@ Index a tree:</p>
 <p>Run the same command again whenever the tree may have changed. To
 index a folder you have just added, without walking the rest:</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> <span class="at">--db</span> archive.sqlite <span class="at">--root</span> /archive <span class="at">--only</span> /archive/2026/new-card</span></code></pre></div>
+<p>To compare two indexed trees, use the <code>align</code> subcommand,
+described in its own chapter:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> align <span class="at">--left</span> old.sqlite <span class="at">--left-root</span> /old <span class="at">--right</span> new.sqlite <span class="at">--right-root</span> /new <span class="at">--out</span> report</span></code></pre></div>
 <h2 data-number="3.2" id="phindex-ox-stock-ocaml-and-oxcaml"><span
 class="header-section-number">3.2</span> phindex-ox (stock OCaml and
 OxCaml)</h2>
@@ -147,12 +150,12 @@ OxCaml, dune 3.9 or later, the <code>sqlite3</code> opam package, zlib,
 and opam 2.1 or later for <code>--subpath</code>. Build phidentify’s
 Rust library with the metadata identity first, then pin its OCaml
 package into the switch you want:</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/firstpair/phidentify</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="kw">(</span><span class="bu">cd</span> phidentify/rust <span class="kw">&amp;&amp;</span> <span class="ex">cargo</span> build <span class="at">--release</span> <span class="at">-p</span> phidentify-ffi <span class="at">--features</span> metadata<span class="kw">)</span></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="va">PHIDENTIFY_FFI_LIBDIR</span><span class="op">=</span><span class="va">$PWD</span>/phidentify/rust/target/release <span class="dt">\</span></span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>  <span class="ex">opam</span> pin add phidentify ./phidentify <span class="at">--subpath</span> ocaml</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> phindex/ocaml <span class="kw">&amp;&amp;</span> <span class="ex">dune</span> build</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="ex">./_build/default/phindex_ox.exe</span> <span class="at">--db</span> archive.sqlite <span class="at">--root</span> /archive <span class="at">--workers</span> 16</span></code></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/firstpair/phidentify</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="kw">(</span><span class="bu">cd</span> phidentify/rust <span class="kw">&amp;&amp;</span> <span class="ex">cargo</span> build <span class="at">--release</span> <span class="at">-p</span> phidentify-ffi <span class="at">--features</span> metadata<span class="kw">)</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="va">PHIDENTIFY_FFI_LIBDIR</span><span class="op">=</span><span class="va">$PWD</span>/phidentify/rust/target/release <span class="dt">\</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>  <span class="ex">opam</span> pin add phidentify ./phidentify <span class="at">--subpath</span> ocaml</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> phindex/ocaml <span class="kw">&amp;&amp;</span> <span class="ex">dune</span> build</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="ex">./_build/default/phindex_ox.exe</span> <span class="at">--db</span> archive.sqlite <span class="at">--root</span> /archive <span class="at">--workers</span> 16</span></code></pre></div>
 <p>The installed name is <code>phindex-ox</code>. The same source builds
 in a stock OCaml switch and in an OxCaml switch; phidentify’s package
 compiles the domain pool that suits the switch, and the walk line
@@ -195,7 +198,8 @@ free of symlinks</td>
 <tr>
 <td><code>--only SUBDIR</code></td>
 <td>none</td>
-<td>walk only this folder, which must lie under <code>--root</code></td>
+<td>walk only this folder, which must lie under <code>--root</code>;
+repeatable</td>
 </tr>
 <tr>
 <td><code>--full-stat</code></td>
@@ -207,7 +211,7 @@ walk</td>
 <td><code>--workers N</code></td>
 <td>8</td>
 <td>identification workers: rayon threads in phindex, OCaml domains in
-phindex-ox; at least 1</td>
+phindex-ox; at least 1; see <em>Choosing –workers</em></td>
 </tr>
 <tr>
 <td><code>--progress-secs S</code></td>
@@ -226,19 +230,47 @@ example, a root given under <code>/tmp</code> is stored under
 <code>/private/tmp</code>. Write queries against the stored form.</p>
 <h2 data-number="3.4" id="what-it-prints"><span
 class="header-section-number">3.4</span> What it prints</h2>
-<p>Everything goes to stderr. A run prints the walk, the plan, progress
-lines, and a summary:</p>
-<pre class="text"><code>walk: 3104 directories, 12 listed, 3092 unchanged and taken from the index, 1 s
-walked 1612934 files under /archive, 412 to read (9.8 GB), 37 moved or renamed (identities kept), 5 gone, 0 errors, 16 workers (phindex), identities: phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved
-+0h01m 288/412 files, 6.9/9.8 GB (70.4%), 115 MB/s, 0 errors, ETA 0h00m; raw blocks 263, Lightroom 251, metadata 288, preserved 259
-done: read 412 files, 9.8 GB, 0 errors (0 stored SHA-256 mismatches); raw blocks 381, Lightroom 362, metadata 412, preserved 376</code></pre>
-<p>The numbers are illustrative. The walk line says how many directories
-were listed and how many were taken from the index. The plan line says
-how many files must be read, how many were carried across a move, and
-how many vanished. The progress line counts, for the files read so far,
-how many got each identity. Its ETA assumes the remaining bytes go at
-the rate so far. In phindex the writer wakes every second, so progress
-lines arrive on time; in phindex-ox they are checked after each
-batch.</p>
+<p>Everything goes to stderr. A run prints a launch header, the walk,
+the plan, progress lines, and a summary:</p>
+<pre class="text"><code>phindex 2f2c4580ffbf542a1bb4edba4ce1b9327a575ff6 built Mon 2026-11-02 13:50:12 PST
+walk: 3104 directories, 12 listed, 3092 unchanged and taken from the index, 1 s
+walked 1612934 files under /archive, 412 to read (9.8 GB; 0 of them only to add image_data, by their first bytes unless they can have it), 37 moved or renamed (identities kept), 5 gone, 0 errors, 16 workers (phindex), identities: phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1
++0h01m 288/412 files, 6.9/9.8 GB (70.4%), 115 MB/s, 0 errors, ETA 0h00m; raw blocks 263, Lightroom 251, metadata 288, preserved 259, image data 21, upgraded unread 0
+done: read 412 files, 9.8 GB, 0 errors (0 stored SHA-256 mismatches); raw blocks 381, Lightroom 362, metadata 412, preserved 376, image data 30; upgraded without a read 0</code></pre>
+<p>The numbers are illustrative. The launch header is described below.
+The walk line says how many directories were listed and how many were
+taken from the index. The plan line says how many files must be read,
+how many were carried across a move, and how many vanished. The progress
+line counts, for the files read so far, how many got each identity, and
+how many rows of the previous revision were settled without a read. Its
+ETA assumes the remaining bytes go at the rate so far. In phindex the
+writer wakes every second, so progress lines arrive on time; in
+phindex-ox they are checked after each batch. A run that upgrades an
+index from the previous revision prints one more line before the walk,
+<code>upgrade: N DNG rows given image_data without a read</code>, and
+its plan line says how many of the files to read are there only to add
+<code>image_data</code>.</p>
+<h2 data-number="3.5" id="the-launch-header"><span
+class="header-section-number">3.5</span> The launch header</h2>
+<p>The first line names the build: the source commit the binary was
+built from, with <code>-dirty</code> appended when the working tree had
+uncommitted changes, and the time of the build. phindex-ox adds the
+domain pool it was compiled with:</p>
+<pre class="text"><code>phindex 2f2c4580ffbf542a1bb4edba4ce1b9327a575ff6 built Mon 2026-11-02 13:50:12 PST
+phindex-ox 2f2c4580ffbf542a1bb4edba4ce1b9327a575ff6 built Mon 2026-11-02 13:52:40 PST (domains-oxcaml)</code></pre>
+<p>A long indexing run outlives many edits to the source, and the log of
+a run that took three days should say which code wrote the rows. In
+phindex, <code>rust/build.rs</code> runs <code>git rev-parse HEAD</code>
+and <code>git diff --quiet HEAD</code> at build time and passes the
+result and the build time to the compiler as environment variables,
+which the binary prints with <code>env!</code>; it asks Cargo to rebuild
+when <code>.git/HEAD</code>, <code>.git/index</code>, <code>src</code>
+or <code>Cargo.toml</code> change, so a commit or an edit refreshes the
+header. In phindex-ox, a dune rule with <code>(deps (universe))</code>
+runs the same two git commands on every build and writes them into a
+generated module, <code>build_info.ml</code>, which the program prints.
+A source tree without git prints <code>unknown</code> for the commit.
+The <code>-dirty</code> mark says the binary may not match any commit;
+for runs whose rows matter, build from a committed tree.</p>
 </body>
 </html>

@@ -32,6 +32,71 @@
       margin: 0 0.8em 0.2em -1.6em;
       vertical-align: middle;
     }
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
   </style>
   <link rel="stylesheet" href="book.css" />
 </head>
@@ -71,11 +136,14 @@ failed, the previous run was interrupted before reaching it, or its
 class="header-section-number">5.2</span> The revision stamp</h2>
 <p>Each identified row is stamped, in <code>ids_rev</code>, with the
 identity definitions that computed it:</p>
-<pre class="text"><code>phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved</code></pre>
+<pre class="text"><code>phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1</code></pre>
 <p>The stamp names the phidentify identities and features, the tiffgraph
-grammars and their XMP limit, and the preserved-digest definition. It is
-the same constant in <code>phindex</code> and <code>phindex-ox</code>,
-so either can continue an index the other started.</p>
+grammars and their XMP limit, the preserved-digest definition and the
+image-data definition. The <code>0.1.0</code> in it is phidentify’s
+identity version, not phindex’s; phindex 0.2.0 added only the
+<code>; image-data/1</code> part. It is the same constant in
+<code>phindex</code> and <code>phindex-ox</code>, so either can continue
+an index the other started.</p>
 <p>The stamp changes only when an identity’s definition changes: a new
 grammar, a different limit, a fix that changes some files’ values. A
 release that leaves the definitions alone keeps the stamp, because a new
@@ -88,8 +156,59 @@ file as an error and in the summary’s stored SHA-256 mismatches, and
 stores the new values. On an archive, such a line deserves attention:
 something changed the bytes without changing the metadata the file
 system keeps.</p>
-<h2 data-number="5.3" id="the-quick-walk"><span
-class="header-section-number">5.3</span> The quick walk</h2>
+<h2 data-number="5.3" id="upgrading-from-the-previous-revision"><span
+class="header-section-number">5.3</span> Upgrading from the previous
+revision</h2>
+<p>Adding <code>image_data</code> changed the stamp, and by the rule
+above that would make every row incomplete and send the next run through
+the whole archive again: days of reading on a large tree, to compute one
+identity that most of its files cannot even have. phindex 0.2.0 avoids
+that for exactly one step, from the previous stamp (the current one
+without <code>; image-data/1</code>) to the current one. A row of the
+previous revision whose file is unchanged keeps all its other identities
+and needs only <code>image_data</code>, and for most files that can be
+settled without reading them:</p>
+<ol type="1">
+<li><strong>DNG rows, without a read.</strong> A row whose
+<code>dng_blocks</code> is set is a DNG, and <code>image_data</code>
+refuses DNGs. Before the walk, one SQL <code>UPDATE</code> sets their
+<code>image_err</code> to the DNG reason and their <code>ids_rev</code>
+to the new stamp, for every such row in the walked scope. No file is
+opened.</li>
+<li><strong>Other rows, by their first 16 bytes.</strong> Every other
+unchanged row of the previous revision is planned for reading, but
+marked as an upgrade. A worker opens the file and reads its first 16
+bytes, the test phidentify’s <code>image_data::candidate</code> applies:
+a JPEG’s SOI marker, a TIFF byte-order mark, or a RAF header. A file
+that fails it, such as a video, an XMP sidecar or a Capture One settings
+file, cannot have image data: its row gets <code>image_err</code> =
+<code>not a TIFF-family file or JPEG</code> and the new stamp, and
+nothing else in it changes. A file that cannot be opened is read in
+full, so its error is reported as usual.</li>
+<li><strong>Candidates, in full.</strong> A JPEG, a TIFF-family file or
+a RAF is identified again from scratch, exactly as on a first run, and
+all its identities are rewritten. The stored SHA-256 check above applies
+to them too.</li>
+</ol>
+<p>The progress and summary lines count the second kind as
+<code>upgraded unread</code>. Files that are new or changed are read in
+full as always; the upgrade applies only to rows whose size, mtime and
+inode are unchanged.</p>
+<p>On real archives the savings were large. In an archive of about
+459,000 files, 72,072 DNG rows were upgraded by the SQL update and
+94,455 files, 3.8 TB, had to be read again. In another of about 1.6
+million files, the figures were 102,796 DNG rows and 83,003 files, 1.1
+TB. Everything else was settled by its first 16 bytes. On a real folder
+of 46 DNGs, 48 JPEGs and 2 movies, the upgrade left the DNGs and movies
+unread and re-read the 48 JPEGs, and every identity other than
+<code>image_data</code> came out the same as before. phindex and
+phindex-ox, run on the same real folders, wrote identical rows both when
+indexing them fresh and when upgrading them from the previous
+revision.</p>
+<p>The upgrade covers only that one previous stamp. A row with any older
+stamp is read in full, as before.</p>
+<h2 data-number="5.4" id="the-quick-walk"><span
+class="header-section-number">5.4</span> The quick walk</h2>
 <p>A directory’s mtime changes whenever an entry is added to it, removed
 from it or renamed in it. phindex uses that. Every directory it visits
 is stored in <code>dirs</code> with its inode and mtime. On a rerun, for
@@ -116,8 +235,8 @@ than the directory’s, so the next run lists it again.</p>
 <p>Symbolic links are not followed, and only directories and regular
 files are indexed. A name that is not valid UTF-8 cannot be stored as
 SQLite TEXT; it is skipped and counted as an error.</p>
-<h2 data-number="5.4" id="in-place-rewrites-and---full-stat"><span
-class="header-section-number">5.4</span> In-place rewrites and
+<h2 data-number="5.5" id="in-place-rewrites-and---full-stat"><span
+class="header-section-number">5.5</span> In-place rewrites and
 <code>--full-stat</code></h2>
 <p>The quick walk trusts a directory’s mtime to say whether anything in
 it changed. That holds for every change to the directory’s
@@ -135,21 +254,32 @@ file, not one read: on a large tree, minutes rather than seconds, and
 still nothing like reading the files.</p>
 <p>Programs that save by writing a new file and renaming it over the old
 one change the directory’s mtime, and the quick walk finds them.</p>
-<h2 data-number="5.5" id="only"><span
-class="header-section-number">5.5</span> <code>--only</code></h2>
+<h2 data-number="5.6" id="only"><span
+class="header-section-number">5.6</span> <code>--only</code></h2>
 <p><code>--only SUBDIR</code> limits a run to one folder under
 <code>--root</code>, typically one you have just copied in. Only that
 folder is walked; only rows under it are considered for reading or for
 being marked gone; files elsewhere are left exactly as they are. The
 folder must lie strictly under the root, after both are
 canonicalized.</p>
+<p><code>--only</code> may be repeated. Each folder is then indexed in
+turn, in the order given, as if by separate runs one after the other:
+each has its own walk, plan, reading and row in <code>runs</code>. That
+is the way to index several new folders in one command:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> <span class="at">--db</span> archive.sqlite <span class="at">--root</span> /archive <span class="at">--only</span> /archive/2026/card-a <span class="at">--only</span> /archive/2026/card-b</span></code></pre></div>
+<p>The caution goes the other way. <code>--only</code> is a limit for
+one run, not a setting stored in the index. A later run without
+<code>--only</code> walks the whole root, and if the index has never
+covered the rest of the root, it lists every directory there and reads
+every file in it. To keep working on part of a tree, keep passing
+<code>--only</code>, or point <code>--root</code> at that part.</p>
 <p>Moves are the exception, by design: a file that arrives in the
 <code>--only</code> folder from elsewhere in the index still inherits
 its identities, and its old path is marked gone even though it lies
 outside the folder, because the old path demonstrably no longer
 exists.</p>
-<h2 data-number="5.6" id="moves-and-renames"><span
-class="header-section-number">5.6</span> Moves and renames</h2>
+<h2 data-number="5.7" id="moves-and-renames"><span
+class="header-section-number">5.7</span> Moves and renames</h2>
 <p>Moving or renaming a file within one file system keeps its inode,
 size and mtime. phindex uses that to carry identities across a move
 without reading the file. For each path that is new to the walked scope,
@@ -175,8 +305,8 @@ marked gone is marked gone, so the index never shows two live paths for
 one file that exists once.</p>
 <p>A move across file systems is a copy and a delete. The new file has a
 new inode, so it is read; the old path is marked gone.</p>
-<h2 data-number="5.7" id="gone"><span
-class="header-section-number">5.7</span> Gone</h2>
+<h2 data-number="5.8" id="gone"><span
+class="header-section-number">5.8</span> Gone</h2>
 <p>A path that was in the index under the walked scope and is no longer
 found by the walk is marked <code>gone = 1</code>. Its row and its
 identities stay, because they are evidence: they say what was there.
@@ -190,8 +320,8 @@ away and then moved back, it is marked present again
 (<code>gone = 0</code>) and keeps its identities; a complete row is not
 read again. If it comes back as a different file, with a new inode or a
 new size or mtime, its row is reset and read like any changed file.</p>
-<h2 data-number="5.8" id="commits-interruptions-and-resuming"><span
-class="header-section-number">5.8</span> Commits, interruptions and
+<h2 data-number="5.9" id="commits-interruptions-and-resuming"><span
+class="header-section-number">5.9</span> Commits, interruptions and
 resuming</h2>
 <p>A run has two phases.</p>
 <p><strong>The plan</strong> is committed in one transaction before any
@@ -215,8 +345,8 @@ writes its row in <code>runs</code>.</p>
 <p>One indexer writes an index at a time. Do not run phindex and
 phindex-ox, or two copies of either, against the same database at
 once.</p>
-<h2 data-number="5.9" id="a-file-that-changes-during-the-run"><span
-class="header-section-number">5.9</span> A file that changes during the
+<h2 data-number="5.10" id="a-file-that-changes-during-the-run"><span
+class="header-section-number">5.10</span> A file that changes during the
 run</h2>
 <p>The plan records each file’s size, mtime and inode. After phidentify
 has identified a file, the indexer stats it again. If it is no longer a

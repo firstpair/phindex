@@ -2,7 +2,7 @@
    package (an OxCaml Domain.Safe.spawn pool under an OxCaml switch, Domain.spawn
    under stock OCaml). Same database and revision stamp as the Rust phindex.
 
-     phindex-ox --db INDEX.sqlite --root DIR [--only SUBDIR] [--full-stat] [--workers N] [--progress-secs S] [--batch B]
+     phindex-ox --db INDEX.sqlite --root DIR [--only SUBDIR]... [--full-stat] [--workers N] [--progress-secs S] [--batch B]
 
    Each file read records the phidentify identities and the tiffgraph identity: dngsem_profile (strictest of dng-xmp/0, /1, /2 accepting
    the DNG) and preserved (Semantic Unison's SDE/0-preserved digest of every byte
@@ -370,5 +370,8 @@ let () =
   let int flag default = Option.fold ~none:default ~some:int_of_string (get flag args) in
   let workers = int "--workers" 8 in
   if workers < 1 then (prerr_endline "--workers must be at least 1"; exit 2);
-  update ~db_path:(need "--db") ~root:(need "--root") ~only:(get "--only" args) ~full_stat:(List.mem "--full-stat" args) ~workers
-    ~progress:(Float.of_int (int "--progress-secs" 60)) ~batch:(int "--batch" (workers * 8))
+  (* --only may be repeated: each folder is indexed in turn, in the order given. *)
+  let rec onlys = function "--only" :: v :: rest -> v :: onlys rest | _ :: rest -> onlys rest | [] -> [] in
+  let run only = update ~db_path:(need "--db") ~root:(need "--root") ~only ~full_stat:(List.mem "--full-stat" args) ~workers
+      ~progress:(Float.of_int (int "--progress-secs" 60)) ~batch:(int "--batch" (workers * 8)) in
+  match onlys args with [] -> run None | dirs -> List.iter (fun d -> run (Some d)) dirs

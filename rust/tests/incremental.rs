@@ -91,6 +91,16 @@ fn moves_keep_identities_and_only_limits_the_walk() {
     assert_eq!((read, moved), (1, 1), "--only reads the new file and carries the moved one");
     assert_eq!(row(&db, &root.join("b/f1.txt")).1, 1, "the move's source outside --only is marked gone");
 
+    // Two --only folders are both indexed, in one run.
+    write(&root.join("p/one.txt"), "one");
+    write(&root.join("q/two.txt"), "two");
+    let out = Command::new(env!("CARGO_BIN_EXE_phindex"))
+        .args(["--db", db.to_str().unwrap(), "--root", root.to_str().unwrap(), "--workers", "2",
+               "--only", root.join("p").to_str().unwrap(), "--only", root.join("q").to_str().unwrap()])
+        .output().unwrap();
+    assert!(out.status.success());
+    assert!(row(&db, &root.join("p/one.txt")).0.is_some() && row(&db, &root.join("q/two.txt")).0.is_some());
+
     // Moved away and back to the same path, unchanged: present again, not read.
     fs::rename(root.join("b/f2.txt"), root.join("f2.txt")).unwrap();
     run(&db, &root, &[]);

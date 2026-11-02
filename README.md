@@ -40,7 +40,7 @@ their SHA-256 and length.
 - **Moves and renames.** A new path whose device, inode, size and mtime equal a
   vanished, fully identified row takes over its identities without a read. A
   file moved twice marks both old paths gone.
-- **`--only SUBDIR`.** Walks just a folder you've added.
+- **`--only SUBDIR`.** Walks just a folder you've added. Repeat it to index several folders in turn, in one run.
 - **Interruptions.** Results are committed every 500 files, so a stopped run
   resumes where it stopped.
 

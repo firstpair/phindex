@@ -3,7 +3,7 @@
 //! the same database with the same revision stamp, so either continues the
 //! other's index.
 //!
-//!   phindex --db INDEX.sqlite --root DIR [--only SUBDIR] [--full-stat] [--workers N] [--progress-secs S]
+//!   phindex --db INDEX.sqlite --root DIR [--only SUBDIR]... [--full-stat] [--workers N] [--progress-secs S]
 //!   phindex align --left A.sqlite --left-root DIR --right B.sqlite --right-root DIR --out REPORT_DIR  (see align.rs)
 //!
 //! Each file read records SHA-256, DNG raw blocks, Lightroom's fingerprint
@@ -505,6 +505,15 @@ fn main() -> Result<()> {
         bail!("--workers must be at least 1");
     }
     let progress = Duration::from_secs(get("--progress-secs").map(|s| s.parse()).transpose()?.unwrap_or(60));
-    update(&get("--db").context("--db required")?, &get("--root").context("--root required")?, get("--only").as_deref(),
-           args.iter().any(|a| a == "--full-stat"), workers, progress)
+    // --only may be repeated: each folder is indexed in turn, in the order given.
+    let only: Vec<&String> = args.windows(2).filter(|w| w[0] == "--only").map(|w| &w[1]).collect();
+    let (db, root) = (get("--db").context("--db required")?, get("--root").context("--root required")?);
+    let full_stat = args.iter().any(|a| a == "--full-stat");
+    if only.is_empty() {
+        return update(&db, &root, None, full_stat, workers, progress);
+    }
+    for o in only {
+        update(&db, &root, Some(o), full_stat, workers, progress)?;
+    }
+    Ok(())
 }

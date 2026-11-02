@@ -418,7 +418,8 @@ SELECT count(*) FROM files WHERE gone = 0
        'phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved');
 
 -- the last runs
-SELECT root, datetime(started_unix, 'unixepoch'), finished_unix - started_unix AS secs,
+SELECT root, datetime(started_unix, 'unixepoch') AS started,
+       finished_unix - started_unix AS secs,
        walked, hashed, bytes_hashed, gone, errors
 FROM runs ORDER BY started_unix DESC LIMIT 10;
 ```

@@ -194,7 +194,7 @@ One row per directory ever visited: `path`, `ino`, `mtime_ns`, `seen_unix` and `
 
 ## runs
 
-One row per completed run: `root`, `started_unix`, `finished_unix`, `walked` (files in the walked scope), `hashed` (files identified), `bytes_hashed`, `gone` (files newly marked gone) and `errors`. phindex records the walked scope in `root`, which is the `--only` folder when one was given; phindex-ox records `--root`. A run that was interrupted leaves no row.
+One row per completed run: `root`, `started_unix`, `finished_unix`, `walked` (files in the walked scope), `hashed` (files identified), `bytes_hashed`, `gone` (files newly marked gone) and `errors`. Both indexers record the walked scope in `root`: the `--only` folder when one was given, otherwise `--root`. A run that was interrupted leaves no row.
 
 # Incremental behaviour
 
@@ -268,7 +268,7 @@ A move across file systems is a copy and a delete. The new file has a new inode,
 
 A path that was in the index under the walked scope and is no longer found by the walk is marked `gone = 1`. Its row and its identities stay, because they are evidence: they say what was there. Queries about the current tree add `gone = 0`. A path already marked gone is not counted again. Directories that vanish are marked gone in `dirs` the same way, and a directory that reappears is listed in full.
 
-A gone path that comes back as a new file, with a new inode or a new size or mtime, is reset and read like any changed file, and is no longer gone. In this version, a path that comes back with the same inode, size and mtime it had when it vanished, such as a file moved away and then moved back, keeps `gone = 1`; touching the file, or copying it back rather than moving it, makes the next run read it and clear the mark.
+A gone path can come back. If it comes back unchanged, with the same inode, size and mtime it had when it vanished, as when a file is moved away and then moved back, it is marked present again (`gone = 0`) and keeps its identities; a complete row is not read again. If it comes back as a different file, with a new inode or a new size or mtime, its row is reset and read like any changed file.
 
 ## Commits, interruptions and resuming
 
@@ -313,7 +313,7 @@ The two indexers were run on the same folder of 1,061 files, 4.6 GB, with 16 wor
 - **The results were identical.** Every row of `files` and `dirs` matched in every column, error reasons included. The decompressed metadata records differed in one member only, the file access time, which changes when a file is read and which the metadata digest leaves out.
 - **phindex took 13 seconds and 2.3 GB of memory.** phindex-ox took 25 seconds and 3.5 GB.
 
-Equal results are the point: the identities do not depend on which runtime asked for them. The comparison measured totals and did not attribute the difference in time and memory. Two structural differences are the obvious candidates: phindex streams results from a pool that never stops, while phindex-ox spawns domains per batch and waits for each batch's slowest file before the next begins. No stock OCaml timing was taken, so the comparison says nothing about stock OCaml's speed relative to OxCaml's.
+Equal results are the point: the identities do not depend on which runtime asked for them. One case is known to be open and untested: a TIFF or DNG over 1 GiB. phidentify's Rust core holds files up to 1 GiB in memory, so for a larger file phindex reports `file over the in-memory limit` in `dngsem_err`, while phindex-ox's walk reads through its own file descriptor and may accept the file and record a profile. The comparison folder held no such file, so on those files the two indexes may disagree in `dngsem_profile`, `dngsem_err` and the `preserved` columns. The comparison measured totals and did not attribute the difference in time and memory. Two structural differences are the obvious candidates: phindex streams results from a pool that never stops, while phindex-ox spawns domains per batch and waits for each batch's slowest file before the next begins. No stock OCaml timing was taken, so the comparison says nothing about stock OCaml's speed relative to OxCaml's.
 
 For production runs, use `phindex`. Use `phindex-ox` when you want the indexer in OCaml, and as a cross-check: run both on a sample, then compare the two databases column by column.
 
@@ -429,7 +429,7 @@ FROM runs ORDER BY started_unix DESC LIMIT 10;
 The integration tests in [`rust/tests/incremental.rs`](../rust/tests/incremental.rs) run the phindex binary on disposable synthetic trees in a temporary directory, with two workers:
 
 - **Reruns read only what changed.** A first run reads six files; an unchanged rerun reads none; a new nested folder is found by the quick walk and its one file read; a file rewritten in place is not read by the quick walk and is read by `--full-stat`, with a new SHA-256; a deleted file is marked gone and not counted again on the next run.
-- **Moves keep identities, and `--only` limits the walk.** Renaming a folder of three files reads nothing and reports three moved and three gone, with the SHA-256 carried to the new path. With `--only` on a new folder, the new file is read and a file moved into the folder from outside it is carried, and its old path, outside `--only`, is marked gone.
+- **Moves keep identities, and `--only` limits the walk.** Renaming a folder of three files reads nothing and reports three moved and three gone, with the SHA-256 carried to the new path. With `--only` on a new folder, the new file is read and a file moved into the folder from outside it is carried, and its old path, outside `--only`, is marked gone. A file moved away and then back to its old path, unchanged, is not read and is no longer marked gone.
 - **Identities are recorded separately.** For a text file, the SHA-256 is present, the DNG identities are absent, the metadata digest is present, the refused grammar leaves a reason in `dngsem_err`, and one metadata record is stored.
 
 ```sh

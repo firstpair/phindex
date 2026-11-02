@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en-US" xml:lang="en-US">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <meta name="author" content="Alexy Khrabrov" />
+  <meta name="dcterms.date" content="2026-11-02" />
+  <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
+  <title>Building and running</title>
+  <style>
+    div.sitenav { display: flex; flex-direction: row; flex-wrap: wrap; }
+    span.navlink { flex: 1; }
+    span.navlink-label { display: inline-block; min-width: 4em; }
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+  <link rel="stylesheet" href="book.css" />
+</head>
+<body>
+<nav id="sitenav">
+<div class="sitenav">
+<span class="navlink">
+<span class="navlink-label">Up:</span> <a href="chapter-001.html" accesskey="u" rel="up">phindex</a>
+</span>
+<span class="navlink">
+<span class="navlink-label">Top:</span> <a href="index.html" accesskey="t" rel="top">phindex</a>
+</span>
+</div>
+<div class="sitenav">
+<span class="navlink">
+<span class="navlink-label">Next:</span> <a href="chapter-005.html" accesskey="n" rel="next">The schema</a>
+</span>
+<span class="navlink">
+<span class="navlink-label">Previous:</span> <a href="chapter-003.html" accesskey="p" rel="previous">What phindex is</a>
+</span>
+</div>
+</nav>
+<h1 data-number="3" id="building-and-running"><span
+class="header-section-number">3</span> Building and running</h1>
+<h2 data-number="3.1" id="phindex-rust"><span
+class="header-section-number">3.1</span> phindex (Rust)</h2>
+<p>The Rust toolchain is pinned in <code>rust/rust-toolchain.toml</code>
+to 1.99.0; rustup installs it on first use. phindex depends on
+phidentify from GitHub at a pinned commit, with the
+<code>lightroom</code>, <code>metadata</code> and <code>semantic</code>
+features.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/firstpair/phindex.git</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> phindex/rust</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="ex">cargo</span> build <span class="at">--release</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="ex">cargo</span> test <span class="at">--release</span></span></code></pre></div>
+<p>The result is one binary, <code>rust/target/release/phindex</code>.
+Index a tree:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> <span class="at">--db</span> archive.sqlite <span class="at">--root</span> /archive <span class="at">--workers</span> 16</span></code></pre></div>
+<p>Run the same command again whenever the tree may have changed. To
+index a folder you have just added, without walking the rest:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> <span class="at">--db</span> archive.sqlite <span class="at">--root</span> /archive <span class="at">--only</span> /archive/2026/new-card</span></code></pre></div>
+<h2 data-number="3.2" id="phindex-ox-stock-ocaml-and-oxcaml"><span
+class="header-section-number">3.2</span> phindex-ox (stock OCaml and
+OxCaml)</h2>
+<p>phindex-ox is built on phidentify’s OCaml package, which binds
+phidentify’s Rust library. It needs OCaml 5.1 or later, stock OCaml or
+OxCaml, dune 3.9 or later, the <code>sqlite3</code> opam package, zlib,
+and opam 2.1 or later for <code>--subpath</code>. Build phidentify’s
+Rust library with the metadata identity first, then pin its OCaml
+package into the switch you want:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/firstpair/phidentify</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="kw">(</span><span class="bu">cd</span> phidentify/rust <span class="kw">&amp;&amp;</span> <span class="ex">cargo</span> build <span class="at">--release</span> <span class="at">-p</span> phidentify-ffi <span class="at">--features</span> metadata<span class="kw">)</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="va">PHIDENTIFY_FFI_LIBDIR</span><span class="op">=</span><span class="va">$PWD</span>/phidentify/rust/target/release <span class="dt">\</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>  <span class="ex">opam</span> pin add phidentify ./phidentify <span class="at">--subpath</span> ocaml</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> phindex/ocaml <span class="kw">&amp;&amp;</span> <span class="ex">dune</span> build</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="ex">./_build/default/phindex_ox.exe</span> <span class="at">--db</span> archive.sqlite <span class="at">--root</span> /archive <span class="at">--workers</span> 16</span></code></pre></div>
+<p>The installed name is <code>phindex-ox</code>. The same source builds
+in a stock OCaml switch and in an OxCaml switch; phidentify’s package
+compiles the domain pool that suits the switch, and the walk line
+reports which one is running (<code>domains-stock</code> under stock
+OCaml, <code>domains-oxcaml</code> under OxCaml). phindex-ox refuses to
+start when the linked phidentify lacks the <code>+lightroom</code> or
+<code>+metadata</code> identities its revision stamp promises.</p>
+<p>phindex-ox’s C stub reads the nanosecond mtime from macOS’s
+<code>st_mtimespec</code>, so as written it builds on macOS. The Rust
+phindex uses only portable Unix metadata.</p>
+<h2 data-number="3.3" id="the-command-line"><span
+class="header-section-number">3.3</span> The command line</h2>
+<p>Both indexers take the same options; phindex-ox has one more.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--db FILE</code></td>
+<td>required</td>
+<td>the SQLite index; created if missing, its schema migrated if
+older</td>
+</tr>
+<tr>
+<td><code>--root DIR</code></td>
+<td>required</td>
+<td>the tree to index; canonicalized, so stored paths are absolute and
+free of symlinks</td>
+</tr>
+<tr>
+<td><code>--only SUBDIR</code></td>
+<td>none</td>
+<td>walk only this folder, which must lie under <code>--root</code></td>
+</tr>
+<tr>
+<td><code>--full-stat</code></td>
+<td>off</td>
+<td>list every directory and stat every file, instead of the quick
+walk</td>
+</tr>
+<tr>
+<td><code>--workers N</code></td>
+<td>8</td>
+<td>identification workers: rayon threads in phindex, OCaml domains in
+phindex-ox; at least 1</td>
+</tr>
+<tr>
+<td><code>--progress-secs S</code></td>
+<td>60</td>
+<td>seconds between progress lines on stderr</td>
+</tr>
+<tr>
+<td><code>--batch B</code></td>
+<td>workers × 8</td>
+<td>phindex-ox only: files handed to the domain pool at a time</td>
+</tr>
+</tbody>
+</table>
+<p>Paths are stored as the canonical absolute path. On macOS, for
+example, a root given under <code>/tmp</code> is stored under
+<code>/private/tmp</code>. Write queries against the stored form.</p>
+<h2 data-number="3.4" id="what-it-prints"><span
+class="header-section-number">3.4</span> What it prints</h2>
+<p>Everything goes to stderr. A run prints the walk, the plan, progress
+lines, and a summary:</p>
+<pre class="text"><code>walk: 3104 directories, 12 listed, 3092 unchanged and taken from the index, 1 s
+walked 1612934 files under /archive, 412 to read (9.8 GB), 37 moved or renamed (identities kept), 5 gone, 0 errors, 16 workers (phindex), identities: phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved
++0h01m 288/412 files, 6.9/9.8 GB (70.4%), 115 MB/s, 0 errors, ETA 0h00m; raw blocks 263, Lightroom 251, metadata 288, preserved 259
+done: read 412 files, 9.8 GB, 0 errors (0 stored SHA-256 mismatches); raw blocks 381, Lightroom 362, metadata 412, preserved 376</code></pre>
+<p>The numbers are illustrative. The walk line says how many directories
+were listed and how many were taken from the index. The plan line says
+how many files must be read, how many were carried across a move, and
+how many vanished. The progress line counts, for the files read so far,
+how many got each identity. Its ETA assumes the remaining bytes go at
+the rate so far. In phindex the writer wakes every second, so progress
+lines arrive on time; in phindex-ox they are checked after each
+batch.</p>
+</body>
+</html>

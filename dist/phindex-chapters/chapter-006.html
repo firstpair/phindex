@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en-US" xml:lang="en-US">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <meta name="author" content="Alexy Khrabrov" />
+  <meta name="dcterms.date" content="2026-11-02" />
+  <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
+  <title>Incremental behaviour</title>
+  <style>
+    div.sitenav { display: flex; flex-direction: row; flex-wrap: wrap; }
+    span.navlink { flex: 1; }
+    span.navlink-label { display: inline-block; min-width: 4em; }
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="book.css" />
+</head>
+<body>
+<nav id="sitenav">
+<div class="sitenav">
+<span class="navlink">
+<span class="navlink-label">Up:</span> <a href="chapter-001.html" accesskey="u" rel="up">phindex</a>
+</span>
+<span class="navlink">
+<span class="navlink-label">Top:</span> <a href="index.html" accesskey="t" rel="top">phindex</a>
+</span>
+</div>
+<div class="sitenav">
+<span class="navlink">
+<span class="navlink-label">Next:</span> <a href="chapter-007.html" accesskey="n" rel="next">Two implementations, one index</a>
+</span>
+<span class="navlink">
+<span class="navlink-label">Previous:</span> <a href="chapter-005.html" accesskey="p" rel="previous">The schema</a>
+</span>
+</div>
+</nav>
+<h1 data-number="5" id="incremental-behaviour"><span
+class="header-section-number">5</span> Incremental behaviour</h1>
+<h2 data-number="5.1" id="what-a-rerun-reads"><span
+class="header-section-number">5.1</span> What a rerun reads</h2>
+<p>A file is read when any of these is true:</p>
+<ul>
+<li>its path is new to the index;</li>
+<li>its size, mtime or inode differs from its row;</li>
+<li>its row is not complete: it was never identified, its identification
+failed, the previous run was interrupted before reaching it, or its
+<code>ids_rev</code> differs from the running revision stamp.</li>
+</ul>
+<p>Everything else is skipped without opening the file.</p>
+<h2 data-number="5.2" id="the-revision-stamp"><span
+class="header-section-number">5.2</span> The revision stamp</h2>
+<p>Each identified row is stamped, in <code>ids_rev</code>, with the
+identity definitions that computed it:</p>
+<pre class="text"><code>phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved</code></pre>
+<p>The stamp names the phidentify identities and features, the tiffgraph
+grammars and their XMP limit, and the preserved-digest definition. It is
+the same constant in <code>phindex</code> and <code>phindex-ox</code>,
+so either can continue an index the other started.</p>
+<p>The stamp changes only when an identity’s definition changes: a new
+grammar, a different limit, a fix that changes some files’ values. A
+release that leaves the definitions alone keeps the stamp, because a new
+stamp makes every row incomplete and the next run reads every file
+again. That full re-read is also a check: when it re-reads a file whose
+size, mtime and inode are unchanged and finds a different SHA-256 from
+the one stored, it prints
+<code>SHA256 CHANGED with unchanged size/mtime/inode</code>, counts the
+file as an error and in the summary’s stored SHA-256 mismatches, and
+stores the new values. On an archive, such a line deserves attention:
+something changed the bytes without changing the metadata the file
+system keeps.</p>
+<h2 data-number="5.3" id="the-quick-walk"><span
+class="header-section-number">5.3</span> The quick walk</h2>
+<p>A directory’s mtime changes whenever an entry is added to it, removed
+from it or renamed in it. phindex uses that. Every directory it visits
+is stored in <code>dirs</code> with its inode and mtime. On a rerun, for
+each directory:</p>
+<ol type="1">
+<li>phindex stats the directory.</li>
+<li>If its inode and mtime equal the stored ones, the directory is
+<strong>not listed</strong>. Its files come from the index, with the
+size, mtime and inode stored for them, and its subdirectories come from
+<code>dirs</code>; each subdirectory is stat’ed in turn and goes through
+the same test.</li>
+<li>Otherwise the directory is <strong>listed</strong>: every entry is
+stat’ed, new files and subdirectories are found, and vanished ones drop
+out.</li>
+</ol>
+<p>So a rerun lists only the directories whose contents changed, such as
+the parent of a new folder and the folder itself, and stats one inode
+per unchanged directory. On a tree of 1.6 million files in 3,100
+directories, the quick walk took 16 seconds. The first run of a tree,
+before <code>dirs</code> knows it, lists everything.</p>
+<p>The directory’s mtime is taken before it is listed. If an entry is
+added while the directory is being listed, the stored mtime is older
+than the directory’s, so the next run lists it again.</p>
+<p>Symbolic links are not followed, and only directories and regular
+files are indexed. A name that is not valid UTF-8 cannot be stored as
+SQLite TEXT; it is skipped and counted as an error.</p>
+<h2 data-number="5.4" id="in-place-rewrites-and---full-stat"><span
+class="header-section-number">5.4</span> In-place rewrites and
+<code>--full-stat</code></h2>
+<p>The quick walk trusts a directory’s mtime to say whether anything in
+it changed. That holds for every change to the directory’s
+<strong>entries</strong>, but not for a change to a file’s
+<strong>contents</strong>. A file rewritten in place under the same
+name, by an editor saving into it or a tool appending to it, changes its
+own mtime and size but not its directory’s. The quick walk takes that
+file’s row from the index and never sees the change.</p>
+<p><code>--full-stat</code> turns the quick walk off: every directory is
+listed and every file stat’ed. A file whose size, mtime or inode changed
+is then read again, exactly as on a first run. Use it after anything
+that may have rewritten files in place, such as a tool that writes
+metadata into DNGs, and periodically as a sweep. It costs one stat per
+file, not one read: on a large tree, minutes rather than seconds, and
+still nothing like reading the files.</p>
+<p>Programs that save by writing a new file and renaming it over the old
+one change the directory’s mtime, and the quick walk finds them.</p>
+<h2 data-number="5.5" id="only"><span
+class="header-section-number">5.5</span> <code>--only</code></h2>
+<p><code>--only SUBDIR</code> limits a run to one folder under
+<code>--root</code>, typically one you have just copied in. Only that
+folder is walked; only rows under it are considered for reading or for
+being marked gone; files elsewhere are left exactly as they are. The
+folder must lie strictly under the root, after both are
+canonicalized.</p>
+<p>Moves are the exception, by design: a file that arrives in the
+<code>--only</code> folder from elsewhere in the index still inherits
+its identities, and its old path is marked gone even though it lies
+outside the folder, because the old path demonstrably no longer
+exists.</p>
+<h2 data-number="5.6" id="moves-and-renames"><span
+class="header-section-number">5.6</span> Moves and renames</h2>
+<p>Moving or renaming a file within one file system keeps its inode,
+size and mtime. phindex uses that to carry identities across a move
+without reading the file. For each path that is new to the walked scope,
+it looks for rows anywhere in the index with:</p>
+<ul>
+<li>the same device, inode, size and mtime;</li>
+<li>the same revision stamp, and a SHA-256, so they are complete;</li>
+<li>a path that is not in this walk and no longer exists on disk.</li>
+</ul>
+<p>If there is one, the new path takes over its identities and its
+metadata record, and the old path is marked gone. Renaming a folder of
+three files is a run that reads nothing and reports three moved and
+three gone.</p>
+<p>The last condition matters for hard links. Two live hard links share
+an inode, size and mtime, but both paths exist, so neither is taken for
+a move: each is read and stored separately.</p>
+<p><strong>A file moved twice</strong> can leave two old rows with the
+same device and inode, for example when it went from one folder to
+another between runs, was indexed there with <code>--only</code>, and
+was then moved again. Both old paths have vanished. The new path
+inherits from one of them, and every vanished old row that is not yet
+marked gone is marked gone, so the index never shows two live paths for
+one file that exists once.</p>
+<p>A move across file systems is a copy and a delete. The new file has a
+new inode, so it is read; the old path is marked gone.</p>
+<h2 data-number="5.7" id="gone"><span
+class="header-section-number">5.7</span> Gone</h2>
+<p>A path that was in the index under the walked scope and is no longer
+found by the walk is marked <code>gone = 1</code>. Its row and its
+identities stay, because they are evidence: they say what was there.
+Queries about the current tree add <code>gone = 0</code>. A path already
+marked gone is not counted again. Directories that vanish are marked
+gone in <code>dirs</code> the same way, and a directory that reappears
+is listed in full.</p>
+<p>A gone path that comes back as a new file, with a new inode or a new
+size or mtime, is reset and read like any changed file, and is no longer
+gone. In this version, a path that comes back with the same inode, size
+and mtime it had when it vanished, such as a file moved away and then
+moved back, keeps <code>gone = 1</code>; touching the file, or copying
+it back rather than moving it, makes the next run read it and clear the
+mark.</p>
+<h2 data-number="5.8" id="commits-interruptions-and-resuming"><span
+class="header-section-number">5.8</span> Commits, interruptions and
+resuming</h2>
+<p>A run has two phases.</p>
+<p><strong>The plan</strong> is committed in one transaction before any
+file is read. It inserts rows for new paths and resets rows for changed
+ones (clearing every identity), marks vanished files and directories
+gone, records every visited directory’s inode and mtime in
+<code>dirs</code>, and applies moves.</p>
+<p><strong>The reading</strong> commits every 500 results. phindex has
+one writer: the workers identify files in parallel and stream results
+over a bounded channel to the main thread, which writes them and commits
+after every 500 results, successes and failures alike. phindex-ox writes
+each batch’s results in input order and commits after the batch that
+brings the count to 500 or more.</p>
+<p>If a run is stopped, by Ctrl-C, a crash or a power cut, at most the
+uncommitted results are lost. The plan is already in the index: the
+files not yet read have rows with a NULL <code>sha256</code>, so they
+are incomplete. The next run’s quick walk finds their directories
+unchanged, takes their rows from the index, sees them incomplete and
+reads them. Nothing already committed is read again. A run that finishes
+writes its row in <code>runs</code>.</p>
+<p>One indexer writes an index at a time. Do not run phindex and
+phindex-ox, or two copies of either, against the same database at
+once.</p>
+<h2 data-number="5.9" id="a-file-that-changes-during-the-run"><span
+class="header-section-number">5.9</span> A file that changes during the
+run</h2>
+<p>The plan records each file’s size, mtime and inode. After phidentify
+has identified a file, the indexer stats it again. If it is no longer a
+regular file with the same size, mtime and inode, the result is
+discarded with the reason <code>changed since the walk</code>, counted
+as an error, and the row stays incomplete for the next run. Inside
+phidentify, a file that changes while it is being read is likewise an
+error, never a mixture of old and new identities.</p>
+</body>
+</html>

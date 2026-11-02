@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en-US" xml:lang="en-US">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <meta name="author" content="Alexy Khrabrov" />
+  <meta name="dcterms.date" content="2026-11-02" />
+  <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
+  <title>Performance and tuning on hard disks</title>
+  <style>
+    div.sitenav { display: flex; flex-direction: row; flex-wrap: wrap; }
+    span.navlink { flex: 1; }
+    span.navlink-label { display: inline-block; min-width: 4em; }
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="book.css" />
+</head>
+<body>
+<nav id="sitenav">
+<div class="sitenav">
+<span class="navlink">
+<span class="navlink-label">Up:</span> <a href="chapter-001.html" accesskey="u" rel="up">phindex</a>
+</span>
+<span class="navlink">
+<span class="navlink-label">Top:</span> <a href="index.html" accesskey="t" rel="top">phindex</a>
+</span>
+</div>
+<div class="sitenav">
+<span class="navlink">
+<span class="navlink-label">Next:</span> <a href="chapter-009.html" accesskey="n" rel="next">Queries</a>
+</span>
+<span class="navlink">
+<span class="navlink-label">Previous:</span> <a href="chapter-007.html" accesskey="p" rel="previous">Two implementations, one index</a>
+</span>
+</div>
+</nav>
+<h1 data-number="7" id="performance-and-tuning-on-hard-disks"><span
+class="header-section-number">7</span> Performance and tuning on hard
+disks</h1>
+<p>The first run of a large archive reads every byte, and on an array of
+hard disks that can take days. Whether more workers make it faster
+depends on which of two things limits it at the moment: the CPU or the
+disks.</p>
+<h2 data-number="7.1" id="where-the-time-goes"><span
+class="header-section-number">7.1</span> Where the time goes</h2>
+<p>For most files, identification costs about one pass over the bytes: a
+SHA-256, a TIFF parse, a hash of the raw blocks, a metadata extraction,
+and the preserved digest. Those are fast and the disks usually limit
+them.</p>
+<p>The exception is the Lightroom fingerprint. To compute it, phidentify
+fully decodes a DNG’s raw image, which takes about 0.85 s of CPU per DNG
+for typical camera files, far more than reading the file. An archive of
+DNGs is therefore <strong>CPU-bound</strong> by that decode: with N
+cores busy, it identifies at most about N / 0.85 DNGs per second,
+whatever the disks could deliver. A folder of JPEGs, sidecars or non-DNG
+raw files has no decode and is limited by the disks.</p>
+<h2 data-number="7.2" id="when-workers-help"><span
+class="header-section-number">7.2</span> When workers help</h2>
+<p>While the CPU limits, more workers help, up to the number of cores.
+The sign is that the CPU is busy across all cores, the MB/s on the
+progress line rises when you add workers, and the disks are not at their
+limit. A folder of DNGs, where the Lightroom decode dominates, is the
+usual case.</p>
+<h2 data-number="7.3" id="when-the-disks-limit"><span
+class="header-section-number">7.3</span> When the disks limit</h2>
+<p>Once the disks limit, more workers stop helping and can hurt: every
+worker reads a whole file, and on hard disks several concurrent readers
+make the heads move between files. Watch two numbers with a disk monitor
+such as <code>iostat</code>:</p>
+<ul>
+<li><strong>the read rate</strong>, in MB/s per disk and in total. If it
+stays flat as you add workers, the disks are the limit.</li>
+<li><strong>the request size</strong>, the average kilobytes per
+transfer. Large requests mean long sequential reads, which hard disks do
+well. If the request size falls as workers rise, the readers are
+interleaving and the disks are seeking.</li>
+</ul>
+<p>On hard-disk arrays, start with as many workers as cores, compare the
+read rate and request size over a few minutes against a run with fewer
+workers, and keep the smaller number that gives the same files per
+second. The progress line’s MB/s is the indexer’s own view of the same
+thing.</p>
+<h2 data-number="7.4"
+id="small-files-lower-mbs-not-files-per-second"><span
+class="header-section-number">7.4</span> Small files lower MB/s, not
+files per second</h2>
+<p>An archive is rarely all large DNGs. Lightroom’s <code>.xmp</code>
+sidecars, Capture One’s <code>.cop</code> and <code>.cof</code> settings
+files, thumbnails and other sidecars are small, and many of them sit
+beside each photo. Each costs an open, a stat, a read and a metadata
+extraction, and almost no bytes. In a folder full of them, the MB/s on
+the progress line drops sharply while the files per second barely
+change. That is not a slowdown, and adding workers will not bring the
+MB/s back. Judge progress on such folders by files per second, and
+expect the ETA, which is computed from bytes, to be optimistic while the
+indexer is among small files and pessimistic among large ones.</p>
+<h2 data-number="7.5" id="memory"><span
+class="header-section-number">7.5</span> Memory</h2>
+<p>Each worker holds a whole file in memory while identifying it (files
+up to 1 GiB; larger ones are hashed by streaming), and the Lightroom
+decode holds the decoded raw image as well, two bytes per sample. Peak
+memory therefore grows with the number of workers and the size of the
+largest files in flight. In the comparison above, 16 workers on that
+folder peaked at 2.3 GB for phindex and 3.5 GB for phindex-ox.</p>
+<p>The other memory question is the allocator. Metadata extraction
+through exiftool-rs makes many short-lived allocations of mixed sizes.
+Under the macOS system allocator, that pattern fragmented the heap in
+long multi-threaded runs and kept about 0.5 MB resident per extracted
+file, without bound. With mimalloc, memory stays flat. So phidentify’s C
+library uses mimalloc for every Rust allocation, which covers
+phindex-ox, and the phindex binary sets mimalloc as its own global
+allocator. If you embed phidentify’s Rust crate in another program,
+choose the allocator there; the crate leaves that choice to the
+program.</p>
+</body>
+</html>

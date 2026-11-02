@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en-US" xml:lang="en-US">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <meta name="author" content="Alexy Khrabrov" />
+  <meta name="dcterms.date" content="2026-11-02" />
+  <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
+  <title>What phindex is</title>
+  <style>
+    div.sitenav { display: flex; flex-direction: row; flex-wrap: wrap; }
+    span.navlink { flex: 1; }
+    span.navlink-label { display: inline-block; min-width: 4em; }
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="book.css" />
+</head>
+<body>
+<nav id="sitenav">
+<div class="sitenav">
+<span class="navlink">
+<span class="navlink-label">Up:</span> <a href="chapter-001.html" accesskey="u" rel="up">phindex</a>
+</span>
+<span class="navlink">
+<span class="navlink-label">Top:</span> <a href="index.html" accesskey="t" rel="top">phindex</a>
+</span>
+</div>
+<div class="sitenav">
+<span class="navlink">
+<span class="navlink-label">Next:</span> <a href="chapter-004.html" accesskey="n" rel="next">Building and running</a>
+</span>
+<span class="navlink">
+<span class="navlink-label">Previous:</span> <a href="chapter-002.html" accesskey="p" rel="previous">About this manual</a>
+</span>
+</div>
+</nav>
+<h1 data-number="2" id="what-phindex-is"><span
+class="header-section-number">2</span> What phindex is</h1>
+<p>phindex builds, and keeps up to date, an index of every regular file
+under a directory tree, in one SQLite file. The tree might be a photo
+archive, a backup volume or a disk that came back from a trip. For each
+file the index records where it is, its size, mtime, inode and device,
+and a set of <strong>identities</strong> computed by <a
+href="https://github.com/firstpair/phidentify">phidentify</a>: the
+whole-file SHA-256, the DNG encoded raw blocks, the Lightroom Classic
+original fingerprint, the metadata record digest, and the tiffgraph
+grammar with the preserved digest. All of them come from one
+identification of the file: phidentify reads it into memory once and
+takes every identity it can from those bytes, and checks that the file
+did not change while it worked.</p>
+<p>The index exists to answer archive questions without reading the
+archive again. Which of these files have a byte-identical copy on the
+backup? Which DNGs differ from their copy only in their XMP packet?
+Which file on disk is the original a Lightroom catalog entry recorded?
+Each of those is an SQL query against the index, and each takes seconds,
+where reading a multi-terabyte tree takes days.</p>
+<p>So the index has to be cheap to keep current. Most of this manual is
+about that: a rerun reads only files that are new, changed or
+unfinished, finds changed directories from their mtimes without listing
+the rest, carries identities across moves and renames, and resumes after
+an interruption where it stopped.</p>
+<h2 data-number="2.1" id="the-identity-columns"><span
+class="header-section-number">2.1</span> The identity columns</h2>
+<p>Every identity has its own column in the <code>files</code> table,
+and every identity that can fail has a matching <code>_err</code> column
+for the reason.</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Column</th>
+<th>Identity</th>
+<th>Attempted for</th>
+<th>Equal values mean</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sha256</code></td>
+<td>whole-file SHA-256</td>
+<td>every file</td>
+<td>every byte is equal</td>
+</tr>
+<tr>
+<td><code>dng_blocks</code>, <code>dng_blocks_err</code></td>
+<td>DNG encoded raw blocks</td>
+<td>files with a TIFF header</td>
+<td>same encoded primary raw data; metadata may differ</td>
+</tr>
+<tr>
+<td><code>lr_digest</code>, <code>lr_err</code></td>
+<td>Lightroom Classic original fingerprint</td>
+<td>files that parse as DNGs</td>
+<td>Lightroom Classic’s matcher would pair them</td>
+</tr>
+<tr>
+<td><code>md_digest</code>, <code>md_err</code></td>
+<td>exiftool-rs metadata record, file location left out</td>
+<td>every file</td>
+<td>same metadata record from the same engine</td>
+</tr>
+<tr>
+<td><code>dngsem_profile</code>, <code>dngsem_err</code></td>
+<td>strictest tiffgraph grammar that accepts the file</td>
+<td>every file</td>
+<td>the same grammar applies</td>
+</tr>
+<tr>
+<td><code>preserved</code>, <code>preserved_err</code></td>
+<td>Semantic Unison’s <code>SDE/0-preserved</code> digest</td>
+<td>files a grammar accepted</td>
+<td>every byte outside the XMP packet is equal, at the same size and
+layout</td>
+</tr>
+<tr>
+<td><code>ids_rev</code></td>
+<td>the revision stamp of the identity definitions</td>
+<td>every identified file</td>
+<td>the identities were computed by the same definitions</td>
+</tr>
+</tbody>
+</table>
+<p>phidentify’s manual defines each identity exactly: what goes into it,
+what equality proves and what it does not, and what it costs. This
+manual does not repeat those definitions. In short:</p>
+<ul>
+<li><strong><code>sha256</code></strong> is the only identity that
+proves two files are the same bytes. Files over 1 GiB get a streamed
+SHA-256 and nothing else that needs the bytes in memory.</li>
+<li><strong><code>dng_blocks</code></strong> hashes the encoded raw
+image data of a DNG and its encoding tags, without offsets, XMP,
+previews or maker notes. A keyword edit cannot change it; a flipped raw
+byte always does.</li>
+<li><strong><code>lr_digest</code></strong> is phidentify’s
+reimplementation of the fingerprint Lightroom Classic keeps for every
+original, in upper-case hex as Classic stores it. It is computed only
+for the DNG strata phidentify supports; for anything else it is an
+error, never a guess.</li>
+<li><strong><code>md_digest</code></strong> hashes the ExifTool-shaped
+record that dng-compare’s exiftool-rs engine writes, without the members
+that say where the file sits (its name, directory and file dates). The
+engine’s own version stamp stays in the hash, so records from different
+engines never compare equal.</li>
+<li><strong><code>dngsem_profile</code></strong> names the strictest of
+the grammars <code>dng-xmp/0</code>, <code>dng-xmp/1</code> and
+<code>dng-xmp/2</code> under which tiffgraph found the primary XMP
+packet and checked that nothing else the file declares lies inside
+it.</li>
+<li><strong><code>preserved</code></strong> hashes every byte outside
+that packet, with the file size and the packet’s position bound in. Two
+files with equal <code>preserved</code> values under the same
+<code>dngsem_profile</code> can differ only inside the packet.</li>
+</ul>
+<h2 data-number="2.2"
+id="three-states-and-never-a-match-on-failure"><span
+class="header-section-number">2.2</span> Three states, and never a match
+on failure</h2>
+<p>Each identity column is in one of three states:</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>State</th>
+<th>Value column</th>
+<th><code>_err</code> column</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>computed</td>
+<td>the value</td>
+<td>NULL</td>
+<td>a supported DNG’s <code>lr_digest</code></td>
+</tr>
+<tr>
+<td>failed or refused</td>
+<td>NULL</td>
+<td>the reason</td>
+<td><code>dngsem_err</code> = <code>read outside the bytes</code> for a
+file too short to be a TIFF</td>
+</tr>
+<tr>
+<td>not attempted</td>
+<td>NULL</td>
+<td>NULL</td>
+<td><code>dng_blocks</code> for a text file, which has no TIFF
+header</td>
+</tr>
+</tbody>
+</table>
+<p>A NULL value is never a match. SQL already treats it that way, since
+<code>NULL = NULL</code> is not true, and the queries in this manual
+rely on it: two files that both failed an identity have not agreed on
+anything. The reason is kept so that you can tell an identity that does
+not apply from one that broke, and count either.</p>
+<p>A file whose identification failed as a whole, because it could not
+be read or because it changed while it was being read, keeps
+<code>sha256</code> NULL and every identity column NULL. Its reason is
+printed as an <code>ERROR</code> line on stderr (the first 50 of a run
+are printed) and counted in the run’s errors. It is read again on the
+next run.</p>
+<h2 data-number="2.3" id="where-it-fits"><span
+class="header-section-number">2.3</span> Where it fits</h2>
+<p>phindex is the part of the photo-archive work that remembers. The
+other parts compute, compare and transfer:</p>
+<ul>
+<li><strong><a
+href="https://github.com/firstpair/phidentify">phidentify</a></strong>
+computes the identities, as a Rust library with a C ABI and an OCaml
+package that builds under stock OCaml and under OxCaml. phindex never
+reimplements an identity; it calls phidentify and stores what comes
+back. phidentify’s manual is on the <a
+href="https://firstpair.org/books/phidentify/">First Pair
+shelf</a>.</li>
+<li><strong><a
+href="https://github.com/firstpair/tiffgraph">tiffgraph</a></strong> is
+a bounded TIFF/DNG graph walker, in OCaml (stock OCaml and OxCaml) and
+in Rust. Under a fixed grammar it locates a DNG’s editable XMP packet
+and refuses anything outside the grammar with a reason. The
+<code>dngsem_profile</code> and <code>preserved</code> columns come from
+its walk: the Rust crate inside phidentify’s Rust core for
+<code>phindex</code>, the OCaml library inside phidentify’s OCaml
+package for <code>phindex-ox</code>. Its manual is on the <a
+href="https://firstpair.org/books/tiffgraph/">First Pair shelf</a>.</li>
+<li><strong><a
+href="https://github.com/querygraph/semantic-unison">Semantic
+Unison</a></strong> is a fork of the Unison file synchronizer that sends
+DNG metadata edits without resending image bytes. Its peers negotiate
+which tiffgraph grammar they trust, and it defines the
+<code>SDE/0-preserved</code> digest that proves a metadata transfer left
+every other byte alone. The <code>preserved</code> column is that
+digest, so an index built by phindex speaks the same identity as Unison.
+Its manual is on the <a
+href="https://firstpair.org/books/semantic-unison/">First Pair
+shelf</a>.</li>
+<li><strong><a
+href="https://github.com/firstpair/dng-compare">dng-compare</a></strong>
+compares DNG archives: it pairs files across trees, compares raw
+samples, decodes when encodings differ, and keeps metadata archives.
+phidentify’s raw-block identity is dng-compare’s block comparison turned
+into a digest, and its metadata identity uses dng-compare’s exiftool-rs
+engine. Its manual is on the <a
+href="https://firstpair.org/books/dng-compare/">First Pair
+shelf</a>.</li>
+</ul>
+<h2 data-number="2.4" id="what-it-is-not"><span
+class="header-section-number">2.4</span> What it is not</h2>
+<ul>
+<li><strong>Not a writer.</strong> phindex only reads the indexed tree.
+It writes nothing but its SQLite file.</li>
+<li><strong>Not a synchronizer or a deduplicator.</strong> It tells you
+which files agree on which identity. What to copy, keep or delete is
+your decision, made from queries.</li>
+<li><strong>Not a catalog tool.</strong> It can compare its
+<code>lr_digest</code> column with a Lightroom Classic catalog’s stored
+fingerprints, read from a copy of the catalog. It never opens a live
+catalog and never writes one.</li>
+<li><strong>Not a server.</strong> One indexer, <code>phindex</code> or
+<code>phindex-ox</code>, writes an index at a time. Readers can query
+the index while it runs, because it is in WAL mode.</li>
+</ul>
+</body>
+</html>

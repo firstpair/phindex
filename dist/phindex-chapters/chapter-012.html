@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en-US" xml:lang="en-US">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <meta name="author" content="Alexy Khrabrov" />
+  <meta name="dcterms.date" content="2026-11-02" />
+  <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
+  <title>Reference</title>
+  <style>
+    div.sitenav { display: flex; flex-direction: row; flex-wrap: wrap; }
+    span.navlink { flex: 1; }
+    span.navlink-label { display: inline-block; min-width: 4em; }
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="book.css" />
+</head>
+<body>
+<nav id="sitenav">
+<div class="sitenav">
+<span class="navlink">
+<span class="navlink-label">Up:</span> <a href="chapter-001.html" accesskey="u" rel="up">phindex</a>
+</span>
+<span class="navlink">
+<span class="navlink-label">Top:</span> <a href="index.html" accesskey="t" rel="top">phindex</a>
+</span>
+</div>
+<div class="sitenav">
+<span class="navlink">
+</span>
+<span class="navlink">
+<span class="navlink-label">Previous:</span> <a href="chapter-011.html" accesskey="p" rel="previous">Licences</a>
+</span>
+</div>
+</nav>
+<h1 data-number="11" id="reference"><span
+class="header-section-number">11</span> Reference</h1>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Version</td>
+<td>0.1.0</td>
+</tr>
+<tr>
+<td>Revision stamp</td>
+<td><code>phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved</code></td>
+</tr>
+<tr>
+<td>Metadata engine label</td>
+<td><code>exiftool-rs (via phidentify)</code></td>
+</tr>
+<tr>
+<td>Tables</td>
+<td><code>files</code>, <code>metadata</code>, <code>dirs</code>,
+<code>runs</code></td>
+</tr>
+<tr>
+<td>Commit interval</td>
+<td>every 500 results; the plan in one transaction before reading</td>
+</tr>
+<tr>
+<td>Journal mode</td>
+<td>WAL</td>
+</tr>
+<tr>
+<td>Defaults</td>
+<td><code>--workers 8</code>, <code>--progress-secs 60</code>,
+phindex-ox <code>--batch</code> = workers × 8</td>
+</tr>
+<tr>
+<td>Errors printed</td>
+<td>the first 50 per run</td>
+</tr>
+<tr>
+<td>In-memory limit</td>
+<td>1 GiB (phidentify); larger files get SHA-256 only</td>
+</tr>
+<tr>
+<td>Long strings in records</td>
+<td>over 1 KiB, as
+<code>long-sha256:&lt;hex&gt;:&lt;length&gt;</code></td>
+</tr>
+<tr>
+<td>Record compression</td>
+<td>raw deflate, no zlib header</td>
+</tr>
+<tr>
+<td>Rust</td>
+<td>1.99.0, edition 2024; rayon pool, one SQLite writer, mimalloc</td>
+</tr>
+<tr>
+<td>OCaml</td>
+<td>5.1 or later: stock OCaml (<code>Domain.spawn</code>) or OxCaml
+(<code>Domain.Safe.spawn</code>)</td>
+</tr>
+<tr>
+<td>Source</td>
+<td><a
+href="https://github.com/firstpair/phindex">github.com/firstpair/phindex</a></td>
+</tr>
+<tr>
+<td>Related projects</td>
+<td><a href="https://github.com/firstpair/phidentify">phidentify</a>, <a
+href="https://github.com/firstpair/tiffgraph">tiffgraph</a>, <a
+href="https://github.com/querygraph/semantic-unison">Semantic
+Unison</a>, <a
+href="https://github.com/firstpair/dng-compare">dng-compare</a></td>
+</tr>
+</tbody>
+</table>
+</body>
+</html>

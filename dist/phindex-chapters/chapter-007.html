@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en-US" xml:lang="en-US">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <meta name="author" content="Alexy Khrabrov" />
+  <meta name="dcterms.date" content="2026-11-02" />
+  <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
+  <title>Two implementations, one index</title>
+  <style>
+    div.sitenav { display: flex; flex-direction: row; flex-wrap: wrap; }
+    span.navlink { flex: 1; }
+    span.navlink-label { display: inline-block; min-width: 4em; }
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="book.css" />
+</head>
+<body>
+<nav id="sitenav">
+<div class="sitenav">
+<span class="navlink">
+<span class="navlink-label">Up:</span> <a href="chapter-001.html" accesskey="u" rel="up">phindex</a>
+</span>
+<span class="navlink">
+<span class="navlink-label">Top:</span> <a href="index.html" accesskey="t" rel="top">phindex</a>
+</span>
+</div>
+<div class="sitenav">
+<span class="navlink">
+<span class="navlink-label">Next:</span> <a href="chapter-008.html" accesskey="n" rel="next">Performance and tuning on hard disks</a>
+</span>
+<span class="navlink">
+<span class="navlink-label">Previous:</span> <a href="chapter-006.html" accesskey="p" rel="previous">Incremental behaviour</a>
+</span>
+</div>
+</nav>
+<h1 data-number="6" id="two-implementations-one-index"><span
+class="header-section-number">6</span> Two implementations, one
+index</h1>
+<p>There are two indexers because the same work exercises two runtimes
+differently, and an index that both can write is a strong test of each.
+Both write the same tables with the same revision stamp, so either can
+continue the other’s index, and they must agree row for row.</p>
+<h2 data-number="6.1" id="phindex-rust-1"><span
+class="header-section-number">6.1</span> phindex: Rust</h2>
+<p><code>phindex</code> is one binary. It calls phidentify’s Rust core
+directly, with every identity requested, including the tiffgraph walk
+through tiffgraph’s Rust crate, so the walk and every digest are taken
+from the same in-memory bytes.</p>
+<p>Identification runs on a rayon pool of <code>--workers</code>
+threads. Each worker identifies a file, re-stats it, and sends the
+result over a bounded channel of 256 results to a single SQLite writer
+on the main thread. The writer compacts and deflates the metadata
+record, writes the row, commits every 500 results, and prints progress
+on time even when no result has arrived. The binary uses mimalloc as its
+global allocator.</p>
+<h2 data-number="6.2" id="phindex-ox-ocaml-stock-and-oxcaml"><span
+class="header-section-number">6.2</span> phindex-ox: OCaml, stock and
+OxCaml</h2>
+<p><code>phindex-ox</code> is written in OCaml on phidentify’s OCaml
+package, which binds phidentify’s Rust library through its C ABI and
+adds a domain pool and the tiffgraph walk in OCaml.</p>
+<ul>
+<li><strong>The pool depends on the switch.</strong> Under
+<strong>OxCaml</strong>, phidentify’s package uses a
+<code>Domain.Safe.spawn</code> pool. <code>Domain.Safe.spawn</code>
+accepts only portable closures, so the workers share nothing but an
+immutable array of paths and an atomic counter; the C externals carry
+the <code>@@ portable</code> modality. Under <strong>stock OCaml
+5</strong>, the package uses a <code>Domain.spawn</code> pool with the
+same structure. dune picks the pool for the switch; phindex-ox’s own
+source is the same in both.</li>
+<li><strong>The tiffgraph walk runs inside the workers.</strong> Each
+worker opens the file read-only, builds a tiffgraph reader over
+positional reads on its own descriptor, walks it under the grammars from
+strictest to loosest, closes it, and passes the packet’s position to the
+Rust identification. Nothing non-portable crosses domains. The C stubs
+release the OCaml runtime lock while Rust hashes and while the walker
+reads, so the domains work in parallel under stock OCaml and under
+OxCaml alike.</li>
+<li><strong>Work is handed out in batches.</strong> phindex-ox takes
+<code>--batch</code> files at a time (by default eight per worker) and
+passes them to the pool, which spawns its domains for that batch; each
+domain takes the next file from the atomic counter until the batch is
+done, and the results come back in input order. The writer then writes
+the batch, commits once 500 or more results are pending, and checks
+whether a progress line is due. The batch size trades the cost of
+spawning domains against the time a slow file can hold a batch
+open.</li>
+</ul>
+<p>Rust allocations inside phidentify’s C library use mimalloc; the
+OCaml heap is the OCaml runtime’s own.</p>
+<h2 data-number="6.3" id="the-comparison"><span
+class="header-section-number">6.3</span> The comparison</h2>
+<p>The two indexers were run on the same folder of 1,061 files, 4.6 GB,
+with 16 workers and a warm file cache, each into its own new index.
+phindex-ox was built in an OxCaml switch, so it ran the
+<code>Domain.Safe.spawn</code> pool.</p>
+<ul>
+<li><strong>The results were identical.</strong> Every row of
+<code>files</code> and <code>dirs</code> matched in every column, error
+reasons included. The decompressed metadata records differed in one
+member only, the file access time, which changes when a file is read and
+which the metadata digest leaves out.</li>
+<li><strong>phindex took 13 seconds and 2.3 GB of memory.</strong>
+phindex-ox took 25 seconds and 3.5 GB.</li>
+</ul>
+<p>Equal results are the point: the identities do not depend on which
+runtime asked for them. The comparison measured totals and did not
+attribute the difference in time and memory. Two structural differences
+are the obvious candidates: phindex streams results from a pool that
+never stops, while phindex-ox spawns domains per batch and waits for
+each batch’s slowest file before the next begins. No stock OCaml timing
+was taken, so the comparison says nothing about stock OCaml’s speed
+relative to OxCaml’s.</p>
+<p>For production runs, use <code>phindex</code>. Use
+<code>phindex-ox</code> when you want the indexer in OCaml, and as a
+cross-check: run both on a sample, then compare the two databases column
+by column.</p>
+</body>
+</html>

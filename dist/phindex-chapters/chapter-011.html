@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
   <meta name="dcterms.date" content="2026-11-02" />
-  <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
+  <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
   <title>Testing</title>
   <style>
     div.sitenav { display: flex; flex-direction: row; flex-wrap: wrap; }
@@ -122,7 +122,7 @@
 <h1 data-number="10" id="testing"><span
 class="header-section-number">10</span> Testing</h1>
 <p>The integration tests in <a
-href="https://github.com/firstpair/phindex/blob/eaed355ba51a7f5af1b6824b0da477462822bb61/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
+href="https://github.com/firstpair/phindex/blob/9589cc348f17e1d34693fa81dc3ac0be0f4ee904/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
 run the phindex binary on disposable synthetic trees in a temporary
 directory, with two workers:</p>
 <ul>
@@ -155,7 +155,7 @@ metadata digest is present, the refused grammar leaves a reason in
 <code>dngsem_err</code>, and one metadata record is stored.</li>
 </ul>
 <p>The test in <a
-href="https://github.com/firstpair/phindex/blob/eaed355ba51a7f5af1b6824b0da477462822bb61/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>
+href="https://github.com/firstpair/phindex/blob/9589cc348f17e1d34693fa81dc3ac0be0f4ee904/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>
 is the worked example of the previous chapter: it checks every unit’s
 kind, status, flags and target, the tiers of <code>IMG_2</code>, the
 three image pairs and the right-only units.</p>

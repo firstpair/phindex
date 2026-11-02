@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
   <meta name="dcterms.date" content="2026-11-02" />
-  <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
+  <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
   <title>phindex</title>
   <style>
 
@@ -1597,7 +1597,7 @@ does not walk or name-match the roots:</p>
 nothing to compare, and so are sidecars, whose differences the metadata
 records already show.</p>
 <h2 data-number="9.7" id="a-worked-example"><span class="header-section-number">9.7</span> A worked example</h2>
-<p>The integration test for <code>align</code>, in <a href="https://github.com/firstpair/phindex/blob/eaed355ba51a7f5af1b6824b0da477462822bb61/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>,
+<p>The integration test for <code>align</code>, in <a href="https://github.com/firstpair/phindex/blob/9589cc348f17e1d34693fa81dc3ac0be0f4ee904/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>,
 builds two small synthetic trees of minimal RW2 and JPEG files and
 indexes both. The left folder <code>s1</code> holds five raw+JPEG units,
 <code>IMG_1</code> to <code>IMG_5</code>, a lone <code>IMG_6.JPG</code>,
@@ -1700,7 +1700,7 @@ closer look. <code>right-only.tsv</code> lists <code>s1/IMG_9</code> as
 left content; <code>other/IMG_3</code> is not right-only, since
 <code>IMG_3</code>’s JPEG matched there.</p>
 <h1 data-number="10" id="testing"><span class="header-section-number">10</span> Testing</h1>
-<p>The integration tests in <a href="https://github.com/firstpair/phindex/blob/eaed355ba51a7f5af1b6824b0da477462822bb61/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
+<p>The integration tests in <a href="https://github.com/firstpair/phindex/blob/9589cc348f17e1d34693fa81dc3ac0be0f4ee904/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
 run the phindex binary on disposable synthetic trees in a temporary
 directory, with two workers:</p>
 <ul>
@@ -1732,7 +1732,7 @@ file, the SHA-256 is present, the DNG identities are absent, the
 metadata digest is present, the refused grammar leaves a reason in
 <code>dngsem_err</code>, and one metadata record is stored.</li>
 </ul>
-<p>The test in <a href="https://github.com/firstpair/phindex/blob/eaed355ba51a7f5af1b6824b0da477462822bb61/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>
+<p>The test in <a href="https://github.com/firstpair/phindex/blob/9589cc348f17e1d34693fa81dc3ac0be0f4ee904/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>
 is the worked example of the previous chapter: it checks every unit’s
 kind, status, flags and target, the tiers of <code>IMG_2</code>, the
 three image pairs and the right-only units.</p>

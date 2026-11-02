@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
   <meta name="dcterms.date" content="2026-11-02" />
-  <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
+  <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
   <title>Aligning two trees</title>
   <style>
     div.sitenav { display: flex; flex-direction: row; flex-wrap: wrap; }
@@ -373,7 +373,7 @@ records already show.</p>
 <h2 data-number="9.7" id="a-worked-example"><span
 class="header-section-number">9.7</span> A worked example</h2>
 <p>The integration test for <code>align</code>, in <a
-href="https://github.com/firstpair/phindex/blob/eaed355ba51a7f5af1b6824b0da477462822bb61/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>,
+href="https://github.com/firstpair/phindex/blob/9589cc348f17e1d34693fa81dc3ac0be0f4ee904/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>,
 builds two small synthetic trees of minimal RW2 and JPEG files and
 indexes both. The left folder <code>s1</code> holds five raw+JPEG units,
 <code>IMG_1</code> to <code>IMG_5</code>, a lone <code>IMG_6.JPG</code>,

@@ -2,17 +2,19 @@
 
 This manual is by Alexy Khrabrov, with Claude as co-author. The ideas and decisions are Alexy's; Claude wrote the text and the code with him.
 
-It describes phindex 0.1.0 as of 2026-11-02: the Rust binary `phindex` and its OCaml counterpart `phindex-ox`, which runs under stock OCaml 5 and under OxCaml. phindex is licensed under the MIT License; the binaries link code under other licences, as the chapter on licences explains. Its source is at [github.com/firstpair/phindex](https://github.com/firstpair/phindex).
+It describes phindex 0.2.0 as of 2026-11-02: the Rust binary `phindex` and its OCaml counterpart `phindex-ox`, which runs under stock OCaml 5 and under OxCaml. phindex is licensed under the MIT License; the binaries link code under other licences, as the chapter on licences explains. Its source is at [github.com/firstpair/phindex](https://github.com/firstpair/phindex).
 
 Every example in this manual uses synthetic files or generic paths such as `/archive` and `/backup`. Nothing here depends on a particular photo library, disk or catalog.
 
 # What phindex is
 
-phindex builds, and keeps up to date, an index of every regular file under a directory tree, in one SQLite file. The tree might be a photo archive, a backup volume or a disk that came back from a trip. For each file the index records where it is, its size, mtime, inode and device, and a set of **identities** computed by [phidentify](https://github.com/firstpair/phidentify): the whole-file SHA-256, the DNG encoded raw blocks, the Lightroom Classic original fingerprint, the metadata record digest, and the tiffgraph grammar with the preserved digest. All of them come from one identification of the file: phidentify reads it into memory once and takes every identity it can from those bytes, and checks that the file did not change while it worked.
+phindex builds, and keeps up to date, an index of every regular file under a directory tree, in one SQLite file. The tree might be a photo archive, a backup volume or a disk that came back from a trip. For each file the index records where it is, its size, mtime, inode and device, and a set of **identities** computed by [phidentify](https://github.com/firstpair/phidentify): the whole-file SHA-256, the DNG encoded raw blocks, the Lightroom Classic original fingerprint, the metadata record digest, the tiffgraph grammar with the preserved digest, and the image data of camera raws, TIFFs and JPEGs that are not DNGs. All of them come from one identification of the file: phidentify reads it into memory once and takes every identity it can from those bytes, and checks that the file did not change while it worked.
 
 The index exists to answer archive questions without reading the archive again. Which of these files have a byte-identical copy on the backup? Which DNGs differ from their copy only in their XMP packet? Which file on disk is the original a Lightroom catalog entry recorded? Each of those is an SQL query against the index, and each takes seconds, where reading a multi-terabyte tree takes days.
 
-So the index has to be cheap to keep current. Most of this manual is about that: a rerun reads only files that are new, changed or unfinished, finds changed directories from their mtimes without listing the rest, carries identities across moves and renames, and resumes after an interruption where it stopped.
+So the index has to be cheap to keep current. Most of this manual is about that: a rerun reads only files that are new, changed or unfinished, finds changed directories from their mtimes without listing the rest, carries identities across moves and renames, resumes after an interruption where it stopped, and, when a new identity is added, upgrades the existing rows while reading as few files as it can.
+
+Once two trees are indexed, `phindex align` accounts for every file of one in the other by identity rather than by name, so copies that were moved, renamed or had their metadata edited are still found. It reads only the two indexes, never the files.
 
 ## The identity columns
 
@@ -26,16 +28,36 @@ Every identity has its own column in the `files` table, and every identity that 
 | `md_digest`, `md_err` | exiftool-rs metadata record, file location left out | every file | same metadata record from the same engine |
 | `dngsem_profile`, `dngsem_err` | strictest tiffgraph grammar that accepts the file | every file | the same grammar applies |
 | `preserved`, `preserved_err` | Semantic Unison's `SDE/0-preserved` digest | files a grammar accepted | every byte outside the XMP packet is equal, at the same size and layout |
+| `image_data`, `image_err` | stored image bytes of a camera raw, TIFF or JPEG that is not a DNG | every file | same image bytes in the same order; metadata may differ |
 | `ids_rev` | the revision stamp of the identity definitions | every identified file | the identities were computed by the same definitions |
 
 phidentify's manual defines each identity exactly: what goes into it, what equality proves and what it does not, and what it costs. This manual does not repeat those definitions. In short:
 
-- **`sha256`** is the only identity that proves two files are the same bytes. Files over 1 GiB get a streamed SHA-256 and nothing else that needs the bytes in memory.
+- **`sha256`** is the only identity that proves two files are the same bytes. Files over 1 GiB get a streamed SHA-256, their metadata record and the tiffgraph walk from disk, and nothing that needs the bytes in memory.
 - **`dng_blocks`** hashes the encoded raw image data of a DNG and its encoding tags, without offsets, XMP, previews or maker notes. A keyword edit cannot change it; a flipped raw byte always does.
 - **`lr_digest`** is phidentify's reimplementation of the fingerprint Lightroom Classic keeps for every original, in upper-case hex as Classic stores it. It is computed only for the DNG strata phidentify supports; for anything else it is an error, never a guess.
 - **`md_digest`** hashes the ExifTool-shaped record that dng-compare's exiftool-rs engine writes, without the members that say where the file sits (its name, directory and file dates). The engine's own version stamp stays in the hash, so records from different engines never compare equal.
 - **`dngsem_profile`** names the strictest of the grammars `dng-xmp/0`, `dng-xmp/1` and `dng-xmp/2` under which tiffgraph found the primary XMP packet and checked that nothing else the file declares lies inside it.
 - **`preserved`** hashes every byte outside that packet, with the file size and the packet's position bound in. Two files with equal `preserved` values under the same `dngsem_profile` can differ only inside the packet.
+- **`image_data`** hashes only the stored image bytes of a file that is not a DNG, as the next section explains.
+
+## Image data: an identity that survives metadata edits
+
+`dng_blocks` lets two DNGs agree although their metadata differs. Until 0.2.0 nothing did the same for the other files of an archive: a NEF, an ARW or a JPEG whose EXIF had been edited agreed with its original only on the Lightroom fingerprint, which phidentify computes only for DNGs, so for those files nothing agreed at all. `image_data`, phidentify's sixth identity, fills that gap. It hashes the bytes that hold the picture and leaves out the bytes that describe it:
+
+- **TIFF and the TIFF-based raws** (NEF, CR2, ARW, 3FR, PEF, ORF and others, and BigTIFF): the strip or tile payloads of every IFD, in the main chain and in its SubIFDs, IFD by IFD in walk order, each with its byte counts. The tag tables, EXIF and maker notes, which say where things are and what they mean, are not hashed; only what the strip and tile offsets point to is.
+- **Panasonic RW2**: its raw data is named by RawDataOffset (tag 280), with no byte counts, and runs to the end of the file; that span is taken.
+- **Fujifilm RAF**: the CFA section whose offset and length the RAF header gives.
+- **JPEG**: the primary image's frame header, tables and entropy-coded scans, that is every segment from SOI to EOI except the APPn segments (EXIF, XMP, ICC profiles, embedded thumbnails) and comments. Anything after EOI, such as a trailer some cameras and phones append, is left out.
+
+Two files have equal `image_data` exactly when those bytes are equal, in the same order. A metadata edit that leaves the image bytes in place keeps the value; re-encoding, recompressing or rewriting a preview strip changes it. phidentify checked this on real files: shifting the capture time of a TIFF, an ARW, an RW2 and a JPEG with ExifTool changed each one's whole-file SHA-256 and left its `image_data` equal. ExifTool cannot write 3FR, so that format was not part of the test.
+
+Some files are refused, with a reason in `image_err`:
+
+- **DNGs**, with `DNG: the raw-block identity applies instead`. A DNG's strips include the previews Lightroom regenerates when it saves metadata, so an image-data digest of a DNG would change with a metadata edit; `dng_blocks` hashes only the primary raw data and is the right identity for DNGs.
+- **Files that are not a TIFF-family file or JPEG**, with `not a TIFF-family file or JPEG`: CR3, HEIC and other ISO-media containers, videos, sidecars, text. The decision is made from the first 16 bytes, which is what makes the upgrade described under *Incremental behaviour* cheap.
+
+Why it matters: the commonest edit to a set of camera files is a capture-time shift, made when the camera clock was wrong or in another time zone. It rewrites a few bytes of EXIF in every file, so every whole-file SHA-256 changes, and a byte-for-byte comparison against an unshifted copy says that nothing is backed up. With `image_data` the shifted copy and the original still agree, and `phindex align` can pair them and say that only their metadata differs.
 
 ## Three states, and never a match on failure
 
@@ -92,6 +114,12 @@ Run the same command again whenever the tree may have changed. To index a folder
 phindex --db archive.sqlite --root /archive --only /archive/2026/new-card
 ```
 
+To compare two indexed trees, use the `align` subcommand, described in its own chapter:
+
+```sh
+phindex align --left old.sqlite --left-root /old --right new.sqlite --right-root /new --out report
+```
+
 ## phindex-ox (stock OCaml and OxCaml)
 
 phindex-ox is built on phidentify's OCaml package, which binds phidentify's Rust library. It needs OCaml 5.1 or later, stock OCaml or OxCaml, dune 3.9 or later, the `sqlite3` opam package, zlib, and opam 2.1 or later for `--subpath`. Build phidentify's Rust library with the metadata identity first, then pin its OCaml package into the switch you want:
@@ -117,9 +145,9 @@ Both indexers take the same options; phindex-ox has one more.
 | --- | --- | --- |
 | `--db FILE` | required | the SQLite index; created if missing, its schema migrated if older |
 | `--root DIR` | required | the tree to index; canonicalized, so stored paths are absolute and free of symlinks |
-| `--only SUBDIR` | none | walk only this folder, which must lie under `--root` |
+| `--only SUBDIR` | none | walk only this folder, which must lie under `--root`; repeatable |
 | `--full-stat` | off | list every directory and stat every file, instead of the quick walk |
-| `--workers N` | 8 | identification workers: rayon threads in phindex, OCaml domains in phindex-ox; at least 1 |
+| `--workers N` | 8 | identification workers: rayon threads in phindex, OCaml domains in phindex-ox; at least 1; see *Choosing --workers* |
 | `--progress-secs S` | 60 | seconds between progress lines on stderr |
 | `--batch B` | workers × 8 | phindex-ox only: files handed to the domain pool at a time |
 
@@ -127,16 +155,28 @@ Paths are stored as the canonical absolute path. On macOS, for example, a root g
 
 ## What it prints
 
-Everything goes to stderr. A run prints the walk, the plan, progress lines, and a summary:
+Everything goes to stderr. A run prints a launch header, the walk, the plan, progress lines, and a summary:
 
 ```text
+phindex 2f2c4580ffbf542a1bb4edba4ce1b9327a575ff6 built Mon 2026-11-02 13:50:12 PST
 walk: 3104 directories, 12 listed, 3092 unchanged and taken from the index, 1 s
-walked 1612934 files under /archive, 412 to read (9.8 GB), 37 moved or renamed (identities kept), 5 gone, 0 errors, 16 workers (phindex), identities: phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved
-+0h01m 288/412 files, 6.9/9.8 GB (70.4%), 115 MB/s, 0 errors, ETA 0h00m; raw blocks 263, Lightroom 251, metadata 288, preserved 259
-done: read 412 files, 9.8 GB, 0 errors (0 stored SHA-256 mismatches); raw blocks 381, Lightroom 362, metadata 412, preserved 376
+walked 1612934 files under /archive, 412 to read (9.8 GB; 0 of them only to add image_data, by their first bytes unless they can have it), 37 moved or renamed (identities kept), 5 gone, 0 errors, 16 workers (phindex), identities: phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1
++0h01m 288/412 files, 6.9/9.8 GB (70.4%), 115 MB/s, 0 errors, ETA 0h00m; raw blocks 263, Lightroom 251, metadata 288, preserved 259, image data 21, upgraded unread 0
+done: read 412 files, 9.8 GB, 0 errors (0 stored SHA-256 mismatches); raw blocks 381, Lightroom 362, metadata 412, preserved 376, image data 30; upgraded without a read 0
 ```
 
-The numbers are illustrative. The walk line says how many directories were listed and how many were taken from the index. The plan line says how many files must be read, how many were carried across a move, and how many vanished. The progress line counts, for the files read so far, how many got each identity. Its ETA assumes the remaining bytes go at the rate so far. In phindex the writer wakes every second, so progress lines arrive on time; in phindex-ox they are checked after each batch.
+The numbers are illustrative. The launch header is described below. The walk line says how many directories were listed and how many were taken from the index. The plan line says how many files must be read, how many were carried across a move, and how many vanished. The progress line counts, for the files read so far, how many got each identity, and how many rows of the previous revision were settled without a read. Its ETA assumes the remaining bytes go at the rate so far. In phindex the writer wakes every second, so progress lines arrive on time; in phindex-ox they are checked after each batch. A run that upgrades an index from the previous revision prints one more line before the walk, `upgrade: N DNG rows given image_data without a read`, and its plan line says how many of the files to read are there only to add `image_data`.
+
+## The launch header
+
+The first line names the build: the source commit the binary was built from, with `-dirty` appended when the working tree had uncommitted changes, and the time of the build. phindex-ox adds the domain pool it was compiled with:
+
+```text
+phindex 2f2c4580ffbf542a1bb4edba4ce1b9327a575ff6 built Mon 2026-11-02 13:50:12 PST
+phindex-ox 2f2c4580ffbf542a1bb4edba4ce1b9327a575ff6 built Mon 2026-11-02 13:52:40 PST (domains-oxcaml)
+```
+
+A long indexing run outlives many edits to the source, and the log of a run that took three days should say which code wrote the rows. In phindex, `rust/build.rs` runs `git rev-parse HEAD` and `git diff --quiet HEAD` at build time and passes the result and the build time to the compiler as environment variables, which the binary prints with `env!`; it asks Cargo to rebuild when `.git/HEAD`, `.git/index`, `src` or `Cargo.toml` change, so a commit or an edit refreshes the header. In phindex-ox, a dune rule with `(deps (universe))` runs the same two git commands on every build and writes them into a generated module, `build_info.ml`, which the program prints. A source tree without git prints `unknown` for the commit. The `-dirty` mark says the binary may not match any commit; for runs whose rows matter, build from a committed tree.
 
 # The schema
 
@@ -159,7 +199,7 @@ One row per path ever seen under an indexed root.
 | `gone` | INTEGER | 1 once the path has vanished; the row and its identities are kept |
 | identity columns | TEXT | as in the first chapter, with `ids_rev` |
 
-Indexes cover `sha256`, `size`, `dng_blocks`, `lr_digest`, `md_digest` and `preserved`, so joins on any identity are fast.
+Indexes cover `sha256`, `size`, `dng_blocks`, `lr_digest`, `md_digest`, `preserved` and `image_data`, so joins on any identity are fast.
 
 A row is **complete** when `sha256` is not NULL and `ids_rev` equals the running indexer's revision stamp. Only complete rows are skipped on a rerun and only complete rows can pass their identities to a moved file.
 
@@ -213,12 +253,26 @@ Everything else is skipped without opening the file.
 Each identified row is stamped, in `ids_rev`, with the identity definitions that computed it:
 
 ```text
-phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved
+phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1
 ```
 
-The stamp names the phidentify identities and features, the tiffgraph grammars and their XMP limit, and the preserved-digest definition. It is the same constant in `phindex` and `phindex-ox`, so either can continue an index the other started.
+The stamp names the phidentify identities and features, the tiffgraph grammars and their XMP limit, the preserved-digest definition and the image-data definition. The `0.1.0` in it is phidentify's identity version, not phindex's; phindex 0.2.0 added only the `; image-data/1` part. It is the same constant in `phindex` and `phindex-ox`, so either can continue an index the other started.
 
 The stamp changes only when an identity's definition changes: a new grammar, a different limit, a fix that changes some files' values. A release that leaves the definitions alone keeps the stamp, because a new stamp makes every row incomplete and the next run reads every file again. That full re-read is also a check: when it re-reads a file whose size, mtime and inode are unchanged and finds a different SHA-256 from the one stored, it prints `SHA256 CHANGED with unchanged size/mtime/inode`, counts the file as an error and in the summary's stored SHA-256 mismatches, and stores the new values. On an archive, such a line deserves attention: something changed the bytes without changing the metadata the file system keeps.
+
+## Upgrading from the previous revision
+
+Adding `image_data` changed the stamp, and by the rule above that would make every row incomplete and send the next run through the whole archive again: days of reading on a large tree, to compute one identity that most of its files cannot even have. phindex 0.2.0 avoids that for exactly one step, from the previous stamp (the current one without `; image-data/1`) to the current one. A row of the previous revision whose file is unchanged keeps all its other identities and needs only `image_data`, and for most files that can be settled without reading them:
+
+1. **DNG rows, without a read.** A row whose `dng_blocks` is set is a DNG, and `image_data` refuses DNGs. Before the walk, one SQL `UPDATE` sets their `image_err` to the DNG reason and their `ids_rev` to the new stamp, for every such row in the walked scope. No file is opened.
+2. **Other rows, by their first 16 bytes.** Every other unchanged row of the previous revision is planned for reading, but marked as an upgrade. A worker opens the file and reads its first 16 bytes, the test phidentify's `image_data::candidate` applies: a JPEG's SOI marker, a TIFF byte-order mark, or a RAF header. A file that fails it, such as a video, an XMP sidecar or a Capture One settings file, cannot have image data: its row gets `image_err` = `not a TIFF-family file or JPEG` and the new stamp, and nothing else in it changes. A file that cannot be opened is read in full, so its error is reported as usual.
+3. **Candidates, in full.** A JPEG, a TIFF-family file or a RAF is identified again from scratch, exactly as on a first run, and all its identities are rewritten. The stored SHA-256 check above applies to them too.
+
+The progress and summary lines count the second kind as `upgraded unread`. Files that are new or changed are read in full as always; the upgrade applies only to rows whose size, mtime and inode are unchanged.
+
+On real archives the savings were large. In an archive of about 459,000 files, 72,072 DNG rows were upgraded by the SQL update and 94,455 files, 3.8 TB, had to be read again. In another of about 1.6 million files, the figures were 102,796 DNG rows and 83,003 files, 1.1 TB. Everything else was settled by its first 16 bytes. On a real folder of 46 DNGs, 48 JPEGs and 2 movies, the upgrade left the DNGs and movies unread and re-read the 48 JPEGs, and every identity other than `image_data` came out the same as before. phindex and phindex-ox, run on the same real folders, wrote identical rows both when indexing them fresh and when upgrading them from the previous revision.
+
+The upgrade covers only that one previous stamp. A row with any older stamp is read in full, as before.
 
 ## The quick walk
 
@@ -245,6 +299,14 @@ Programs that save by writing a new file and renaming it over the old one change
 ## `--only`
 
 `--only SUBDIR` limits a run to one folder under `--root`, typically one you have just copied in. Only that folder is walked; only rows under it are considered for reading or for being marked gone; files elsewhere are left exactly as they are. The folder must lie strictly under the root, after both are canonicalized.
+
+`--only` may be repeated. Each folder is then indexed in turn, in the order given, as if by separate runs one after the other: each has its own walk, plan, reading and row in `runs`. That is the way to index several new folders in one command:
+
+```sh
+phindex --db archive.sqlite --root /archive --only /archive/2026/card-a --only /archive/2026/card-b
+```
+
+The caution goes the other way. `--only` is a limit for one run, not a setting stored in the index. A later run without `--only` walks the whole root, and if the index has never covered the rest of the root, it lists every directory there and reads every file in it. To keep working on part of a tree, keep passing `--only`, or point `--root` at that part.
 
 Moves are the exception, by design: a file that arrives in the `--only` folder from elsewhere in the index still inherits its identities, and its old path is marked gone even though it lies outside the folder, because the old path demonstrably no longer exists.
 
@@ -294,7 +356,7 @@ There are two indexers because the same work exercises two runtimes differently,
 
 `phindex` is one binary. It calls phidentify's Rust core directly, with every identity requested, including the tiffgraph walk through tiffgraph's Rust crate, so the walk and every digest are taken from the same in-memory bytes.
 
-Identification runs on a rayon pool of `--workers` threads. Each worker identifies a file, re-stats it, and sends the result over a bounded channel of 256 results to a single SQLite writer on the main thread. The writer compacts and deflates the metadata record, writes the row, commits every 500 results, and prints progress on time even when no result has arrived. The binary uses mimalloc as its global allocator.
+Identification runs on a rayon pool of `--workers` threads. The files to read are sorted by path and handed to the pool one at a time, in that order (rayon's `par_bridge` over the sorted list), so the workers are always reading neighbouring files; the chapter on hard disks explains why that matters. Each worker identifies a file, re-stats it, and sends the result over a bounded channel of 256 results to a single SQLite writer on the main thread. The writer compacts and deflates the metadata record, writes the row, commits every 500 results, and prints progress on time even when no result has arrived. The binary uses mimalloc as its global allocator.
 
 ## phindex-ox: OCaml, stock and OxCaml
 
@@ -302,7 +364,7 @@ Identification runs on a rayon pool of `--workers` threads. Each worker identifi
 
 - **The pool depends on the switch.** Under **OxCaml**, phidentify's package uses a `Domain.Safe.spawn` pool. `Domain.Safe.spawn` accepts only portable closures, so the workers share nothing but an immutable array of paths and an atomic counter; the C externals carry the `@@ portable` modality. Under **stock OCaml 5**, the package uses a `Domain.spawn` pool with the same structure. dune picks the pool for the switch; phindex-ox's own source is the same in both.
 - **The tiffgraph walk runs inside the workers.** Each worker opens the file read-only, builds a tiffgraph reader over positional reads on its own descriptor, walks it under the grammars from strictest to loosest, closes it, and passes the packet's position to the Rust identification. Nothing non-portable crosses domains. The C stubs release the OCaml runtime lock while Rust hashes and while the walker reads, so the domains work in parallel under stock OCaml and under OxCaml alike.
-- **Work is handed out in batches.** phindex-ox takes `--batch` files at a time (by default eight per worker) and passes them to the pool, which spawns its domains for that batch; each domain takes the next file from the atomic counter until the batch is done, and the results come back in input order. The writer then writes the batch, commits once 500 or more results are pending, and checks whether a progress line is due. The batch size trades the cost of spawning domains against the time a slow file can hold a batch open.
+- **Work is handed out in batches, in order.** phindex-ox takes `--batch` consecutive files at a time (by default eight per worker) and passes them to the pool, which spawns its domains for that batch; each domain takes the next file from the atomic counter until the batch is done, and the results come back in input order. The writer then writes the batch, commits once 500 or more results are pending, and checks whether a progress line is due. The batch size trades the cost of spawning domains against the time a slow file can hold a batch open.
 
 Rust allocations inside phidentify's C library use mimalloc; the OCaml heap is the OCaml runtime's own.
 
@@ -313,7 +375,17 @@ The two indexers were run on the same folder of 1,061 files, 4.6 GB, with 16 wor
 - **The results were identical.** Every row of `files` and `dirs` matched in every column, error reasons included. The decompressed metadata records differed in one member only, the file access time, which changes when a file is read and which the metadata digest leaves out.
 - **phindex took 13 seconds and 2.3 GB of memory.** phindex-ox took 25 seconds and 3.5 GB.
 
-Equal results are the point: the identities do not depend on which runtime asked for them. One case is known to be open and untested: a TIFF or DNG over 1 GiB. phidentify's Rust core holds files up to 1 GiB in memory, so for a larger file phindex reports `file over the in-memory limit` in `dngsem_err`, while phindex-ox's walk reads through its own file descriptor and may accept the file and record a profile. The comparison folder held no such file, so on those files the two indexes may disagree in `dngsem_profile`, `dngsem_err` and the `preserved` columns. The comparison measured totals and did not attribute the difference in time and memory. Two structural differences are the obvious candidates: phindex streams results from a pool that never stops, while phindex-ox spawns domains per batch and waits for each batch's slowest file before the next begins. No stock OCaml timing was taken, so the comparison says nothing about stock OCaml's speed relative to OxCaml's.
+Equal results are the point: the identities do not depend on which runtime asked for them. For 0.2.0 the check was repeated on real folders with `image_data`: phindex and phindex-ox wrote identical rows when indexing the folders fresh and when upgrading them from the previous revision. The comparison measured totals and did not attribute the difference in time and memory. Two structural differences are the obvious candidates: phindex streams results from a pool that never stops, while phindex-ox spawns domains per batch and waits for each batch's slowest file before the next begins. No stock OCaml timing was taken, so the comparison says nothing about stock OCaml's speed relative to OxCaml's.
+
+## Files over 1 GiB
+
+phidentify holds a file in memory to identify it only up to 1 GiB. A larger file, typically a video or a large scan, gets a streamed SHA-256 and its metadata record, and the identities that need the bytes in memory report `file over the in-memory limit`. The tiffgraph walk does not need them: it reads only the file's header and IFDs, at known offsets.
+
+The 0.1.0 manual listed this as an open item. phindex-ox's walk had always run on positional reads from its own file descriptor, so for a file over 1 GiB it recorded a profile or a grammar's refusal, while phindex, whose walk ran over the in-memory bytes, recorded `file over the in-memory limit` in `dngsem_err`; on such files the two indexes could disagree. phidentify's Rust core now walks a file over the limit from disk with tiffgraph's `FileReader`, the Rust counterpart of what the OCaml package does, so both indexers record the same `dngsem_profile` or reason. The `preserved` digest and `image_data` still need the bytes in memory and report the limit in both.
+
+Rows an older phindex build wrote for such files still carry the old reason. The upgrade from the previous revision redoes their walk without a full read: a row of the previous revision whose `dngsem_err` is `file over the in-memory limit`, and whose first bytes rule out image data, gets its tiffgraph walk run from disk alongside its `image_err`. A 3 GB AVI, for example, is settled by its first 16 bytes and a walk of its header, not by reading 3 GB. A candidate over the limit, such as a huge TIFF, is identified in full, which includes the walk from disk.
+
+## Which to use
 
 For production runs, use `phindex`. Use `phindex-ox` when you want the indexer in OCaml, and as a cross-check: run both on a sample, then compare the two databases column by column.
 
@@ -338,7 +410,26 @@ Once the disks limit, more workers stop helping and can hurt: every worker reads
 - **the read rate**, in MB/s per disk and in total. If it stays flat as you add workers, the disks are the limit.
 - **the request size**, the average kilobytes per transfer. Large requests mean long sequential reads, which hard disks do well. If the request size falls as workers rise, the readers are interleaving and the disks are seeking.
 
-On hard-disk arrays, start with as many workers as cores, compare the read rate and request size over a few minutes against a run with fewer workers, and keep the smaller number that gives the same files per second. The progress line's MB/s is the indexer's own view of the same thing.
+The progress line's MB/s is the indexer's own view of the same thing.
+
+## Reading in path order
+
+Which files the workers read at the same moment matters as much as how many workers there are. In 0.1.0 the Rust pool took the list of files with rayon's `into_par_iter`, which splits a list into contiguous ranges and gives each thread its own range. With 16 workers that meant 16 readers in 16 distant parts of the tree, typically 16 different folders years apart, all at once. Each worker's file was contiguous on disk, but the disks served the 16 readers in turn, and every switch between them was a long seek.
+
+On a two-disk hard-disk RAID 0, `iostat` showed what that costs: about 368 transfers per second of about 0.5 MB each, nearly every one a seek, for about 175 to 181 MB/s in total, with the process using about 930% CPU. Now the files are sorted by path and handed out one at a time in that order, so the 16 workers read 16 neighbouring files of the same folder, and the heads move a short way between them. The same array then read at about 212 MB/s, with all workers in one folder, and the process's CPU use fell to about 480%: the run had become disk-bound, which on hard disks is where it should be. phindex-ox already handed out consecutive batches of the sorted list and needed no change.
+
+## Choosing `--workers`
+
+A worker does two things with each file, one after the other: it reads the whole file, and then it computes. The computing is the SHA-256 and other digests, the metadata extraction, the tiffgraph walk, and for a supported DNG the full raw decode behind the Lightroom fingerprint, which is by far the most expensive step. A worker waiting on the disk uses no CPU; a worker decoding a DNG uses a whole core. So the right number of workers is the number that keeps whichever of the two is the bottleneck busy, and no more.
+
+Tell the two cases apart from the outside:
+
+- **CPU-bound.** The process's CPU use, in `top` or Activity Monitor, is close to `--workers` × 100%: every worker is computing. The disks show spare capacity in `iostat`. More workers will help, up to the number of cores. This is the usual state in folders of DNGs.
+- **Disk-bound.** The process's CPU use is well below `--workers` × 100%: workers are waiting for reads. In `iostat`, the disks' transfers per second (tps) are near what the disks can do, and the kilobytes per transfer (KB/t) tell you whether those transfers are long sequential reads (large KB/t, good) or short ones between seeks (small KB/t, bad). More workers will not help, and on hard disks they can make the seeks worse.
+
+As a starting point on a four-disk hard-disk RAID 5, use 8 workers; such an array was observed at 264 to 350 MB/s with 8. Then watch for a few minutes: if the run is CPU-bound and the disks have room, add workers; if it is disk-bound with small transfers, try fewer and keep the smaller number that gives the same files per second.
+
+When several indexers share a machine, for example one run per volume, keep their workers' total below the number of cores. Each run that becomes CPU-bound wants all its workers on cores, and if the totals exceed the cores, every run slows down, the decode-heavy ones most, and the machine has nothing left for anything else.
 
 ## Small files lower MB/s, not files per second
 
@@ -346,7 +437,7 @@ An archive is rarely all large DNGs. Lightroom's `.xmp` sidecars, Capture One's 
 
 ## Memory
 
-Each worker holds a whole file in memory while identifying it (files up to 1 GiB; larger ones are hashed by streaming), and the Lightroom decode holds the decoded raw image as well, two bytes per sample. Peak memory therefore grows with the number of workers and the size of the largest files in flight. In the comparison above, 16 workers on that folder peaked at 2.3 GB for phindex and 3.5 GB for phindex-ox.
+Each worker holds a whole file in memory while identifying it (files up to 1 GiB; larger ones are hashed by streaming and walked from disk), and the Lightroom decode holds the decoded raw image as well, two bytes per sample. Peak memory therefore grows with the number of workers and the size of the largest files in flight. In the comparison above, 16 workers on that folder peaked at 2.3 GB for phindex and 3.5 GB for phindex-ox.
 
 The other memory question is the allocator. Metadata extraction through exiftool-rs makes many short-lived allocations of mixed sizes. Under the macOS system allocator, that pattern fragmented the heap in long multi-threaded runs and kept about 0.5 MB resident per extracted file, without bound. With mimalloc, memory stays flat. So phidentify's C library uses mimalloc for every Rust allocation, which covers phindex-ox, and the phindex binary sets mimalloc as its own global allocator. If you embed phidentify's Rust crate in another program, choose the allocator there; the crate leaves that choice to the program.
 
@@ -415,7 +506,7 @@ GROUP BY lr_err ORDER BY 2 DESC;
 -- files still to read (never identified, failed, or from an older revision)
 SELECT count(*) FROM files WHERE gone = 0
   AND (sha256 IS NULL OR ids_rev IS NOT
-       'phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved');
+       'phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1');
 
 -- the last runs
 SELECT root, datetime(started_unix, 'unixepoch') AS started,
@@ -424,13 +515,128 @@ SELECT root, datetime(started_unix, 'unixepoch') AS started,
 FROM runs ORDER BY started_unix DESC LIMIT 10;
 ```
 
+# Aligning two trees
+
+The containment query in the previous chapter answers one question: is every file's exact bytes somewhere else? Real archives need a finer answer. A shoot copied to a new disk may have been renamed by date, sorted into other folders, had its capture times shifted, had its JPEGs re-rendered and its sidecars rewritten. A byte comparison calls all of that missing. `phindex align` instead accounts for every file under a **left** root in a **right** root by identity, file by file and photo by photo, and says for each what kind of match it found.
+
+```sh
+phindex align --left old.sqlite --left-root /old/foto \
+  --right new.sqlite --right-root /new/foto --out report
+```
+
+The two roots must be indexed first; they may be in two index files or in the same one. `align` opens the indexes read-only and never reads a photo. It considers the rows under each root that are not gone, and skips names beginning with a dot, such as `.DS_Store` and AppleDouble files. On a real trial, a left tree of 1.7 million files was aligned with a right tree of 1.6 million in 24 seconds, using 1.6 GB of memory.
+
+## Units
+
+A photo is rarely one file. A raw usually has a JPEG beside it, made by the camera, and an XMP sidecar written by an editor. `align` groups files into **units**: the files of one folder whose names are equal up to the first dot. `IMG_0001.RW2`, `IMG_0001.JPG` and `IMG_0001.xmp` in one folder are one unit, `IMG_0001`; the same names in another folder are another unit.
+
+Each file has a kind from its extension: `dng`; `raw` for the other camera raws (NEF, CR2, CR3, ARW, RW2, RAF, ORF, PEF, 3FR, IIQ and others); `jpeg`; `image` for TIFF, HEIC, PNG and PSD; `sidecar` for XMP sidecars; and `other` for everything else. A unit's **kind** names its images in a fixed order, joined by `+`: `dng`, `dng+jpeg`, `raw`, `raw+jpeg`, `jpeg`, `jpeg+image` and so on. Sidecars ride along and do not appear in the kind; a unit with no image at all is `sidecar` or `other`. The kind separates cases that a count of files would mix up: a `dng` unit is a DNG alone, a `dng+jpeg` unit a DNG with its JPEG, and the report counts them apart.
+
+## How a unit is matched
+
+Each left file is matched by the **strongest identity it shares** with some right file, in this order:
+
+| Tier | Identity shared | Meaning |
+| --- | --- | --- |
+| `identical` | `sha256` | the same bytes |
+| `xmp-only` | `dng_blocks`, and `preserved` under the same `dngsem_profile` | a DNG whose copy differs only inside its XMP packet |
+| `dng-metadata` | `dng_blocks` | a DNG with the same raw data and some other difference, such as new previews |
+| `image-metadata` | `image_data` | a raw, TIFF or JPEG with the same image bytes and edited metadata |
+| `lightroom` | `lr_digest` | only Lightroom's original fingerprint is shared |
+| `unit-partner` | none | the file's counterpart, by kind, in the right unit its photo matched |
+
+A unit is matched as a whole. Its members are taken in order of kind: the DNG first, then other raws, then JPEGs and other images, then sidecars and the rest. The first member that matches anything picks the unit's **target**, the right unit its photo is in. Among several candidates of a tier, a member prefers the same relative path, then a candidate in the target unit, then the same file name, and then the first path in sort order. That is how the members follow their raw: when a camera JPEG has a byte-identical copy in some other folder, the copy in the raw's unit wins, because it sits in the target.
+
+A member that shares no identity at all, but whose unit has a target, takes the target's member of the same kind, if no member matched by identity has taken it, as `unit-partner`. A JPEG re-rendered from its raw, with different image bytes, is the usual case: nothing in it is shared, but it is plainly the same photo's JPEG. A member not yet indexed never becomes a unit partner.
+
+## Statuses and flags
+
+Each left unit gets one status:
+
+| Status | When |
+| --- | --- |
+| `identical` | every member matched with `identical` |
+| `metadata-differs` | every member matched, some with a weaker tier, but no image is a unit partner |
+| `image-differs` | every member matched, and at least one image member (DNG, raw, JPEG or other image) only as a unit partner |
+| `partial` | some members matched and some did not |
+| `left-only` | no member matched, and every right row is indexed |
+| `not-found-yet` | no member matched, but some right rows are not yet indexed, so a match may still appear |
+| `not-indexed` | at least one member has not been indexed on the left |
+
+`image-differs` is reserved for images. A sidecar or settings file that matched only as a unit partner means its text changed, which is a metadata difference, and leaves the unit `metadata-differs`. An unread row is never reported as missing: on the left it makes the unit `not-indexed`, and on the right it turns `left-only` into `not-found-yet` until the right index is complete.
+
+Flags describe how the match was found, and a unit can have several:
+
+- `moved`: the target unit is in another folder.
+- `renamed`: the target unit has another name.
+- `split`: some members matched files outside the target unit.
+- `duplicates`: some member had more than one candidate in its tier.
+- `right-has-more`: the target unit has more members than the left unit, such as an added sidecar.
+
+## Right-only units
+
+A right unit to which no left file was matched is listed as right-only, with its content: `new` when it holds something the left lacks; `copy` when every member's SHA-256 also occurs on the left, as for a second copy of a left file in another folder; or `not-indexed` while any member is unread. New units are counted by kind.
+
+## The report
+
+`--out` names a directory, created if needed, which receives:
+
+| File | Contents |
+| --- | --- |
+| `summary.json` | file and unit counts per side, left units by kind and status, flag counts, left files by tier, right-only units by kind, copies, and unread counts; also printed to stdout |
+| `units.tsv` | one line per left unit: unit, kind, status, flags, right unit, and each member's extension with its tier |
+| `files.tsv` | one line per left file: left path, right path, tier, and the number of candidates; relative to the roots |
+| `right-only.tsv` | one line per right-only unit: unit, kind, content |
+| `dng-pairs.tsv` | absolute `LEFT<TAB>RIGHT` paths of matched DNGs whose bytes differ |
+| `image-pairs.tsv` | the same for matched raws, JPEGs and other images |
+
+## From alignment to raw comparison
+
+An alignment says which files correspond and how; it does not look at pixels. For DNGs, [dng-compare](https://github.com/firstpair/dng-compare) does: it compares raw samples and metadata of file pairs. `dng-pairs.tsv` is written in the format of its `--pairs` option, with absolute paths, so the pairs `align` found can be fed to it directly. With `--pairs-only`, dng-compare compares just those pairs and does not walk or name-match the roots:
+
+```sh
+uv run python compare_dng.py /old/foto /new/foto \
+  --pairs report/dng-pairs.tsv --pairs-only --output reports/aligned-dngs
+```
+
+Identical files are left out of the pairs files, since there is nothing to compare, and so are sidecars, whose differences the metadata records already show.
+
+## A worked example
+
+The integration test for `align`, in [`rust/tests/align.rs`](../rust/tests/align.rs), builds two small synthetic trees of minimal RW2 and JPEG files and indexes both. The left folder `s1` holds five raw+JPEG units, `IMG_1` to `IMG_5`, a lone `IMG_6.JPG`, and an `IMG_7.JPG` whose row has not been read. On the right:
+
+- `IMG_1`'s two files moved, unchanged, to the folder `t1`;
+- `IMG_2`'s two files had their capture time shifted, which changes their metadata bytes but not their image data;
+- `IMG_3`'s raw stayed and its JPEG exists only in another folder, `other`;
+- `IMG_4` was renamed to `X_4`, unchanged, and a copy of its JPEG also sits in `dup`;
+- `IMG_5`'s raw is unchanged and its JPEG was re-rendered with different image data;
+- `IMG_6` is not there, and a new `IMG_9.JPG` is.
+
+`units.tsv` then reads:
+
+| Left unit | Kind | Status | Flags | Right unit |
+| --- | --- | --- | --- | --- |
+| `s1/IMG_1` | `raw+jpeg` | `identical` | `moved` | `t1/IMG_1` |
+| `s1/IMG_2` | `raw+jpeg` | `metadata-differs` | | `s1/IMG_2` |
+| `s1/IMG_3` | `raw+jpeg` | `identical` | `split` | `s1/IMG_3` |
+| `s1/IMG_4` | `raw+jpeg` | `identical` | `renamed,duplicates` | `s1/X_4` |
+| `s1/IMG_5` | `raw+jpeg` | `image-differs` | | `s1/IMG_5` |
+| `s1/IMG_6` | `jpeg` | `left-only` | | |
+| `s1/IMG_7` | `jpeg` | `not-indexed` | | |
+
+Both members of `IMG_2` matched as `image-metadata`. `IMG_4`'s JPEG had two identical candidates, the one beside `X_4.RW2` and the copy in `dup`; it chose the one in the target unit, and the unit is flagged `duplicates`. `IMG_5`'s JPEG shares no identity and matched as the unit partner of the raw, so the unit's image differs. `image-pairs.tsv` lists three pairs, `IMG_2`'s two files and `IMG_5`'s JPEG, for a closer look. `right-only.tsv` lists `s1/IMG_9` as `new` and `dup/IMG_4` as a `copy` of left content; `other/IMG_3` is not right-only, since `IMG_3`'s JPEG matched there.
+
 # Testing
 
 The integration tests in [`rust/tests/incremental.rs`](../rust/tests/incremental.rs) run the phindex binary on disposable synthetic trees in a temporary directory, with two workers:
 
 - **Reruns read only what changed.** A first run reads six files; an unchanged rerun reads none; a new nested folder is found by the quick walk and its one file read; a file rewritten in place is not read by the quick walk and is read by `--full-stat`, with a new SHA-256; a deleted file is marked gone and not counted again on the next run.
 - **Moves keep identities, and `--only` limits the walk.** Renaming a folder of three files reads nothing and reports three moved and three gone, with the SHA-256 carried to the new path. With `--only` on a new folder, the new file is read and a file moved into the folder from outside it is carried, and its old path, outside `--only`, is marked gone. A file moved away and then back to its old path, unchanged, is not read and is no longer marked gone.
+- **`--only` may be repeated.** Two new folders given as two `--only` options are both indexed in one run.
+- **The upgrade reads only image candidates.** Rows are set back to the previous revision, one is marked as a DNG and one is given the reason an older build wrote for files over 1 GiB. The next run reads only the JPEG again; the DNG row gets the DNG reason, the text file `not a TIFF-family file or JPEG` and its tiffgraph walk redone, every row the new stamp, and a further run reads nothing.
 - **Identities are recorded separately.** For a text file, the SHA-256 is present, the DNG identities are absent, the metadata digest is present, the refused grammar leaves a reason in `dngsem_err`, and one metadata record is stored.
+
+The test in [`rust/tests/align.rs`](../rust/tests/align.rs) is the worked example of the previous chapter: it checks every unit's kind, status, flags and target, the tiers of `IMG_2`, the three image pairs and the right-only units.
 
 ```sh
 cd rust && cargo test --release
@@ -451,18 +657,22 @@ Built phindex and phindex-ox binaries are therefore covered by the GPL. phindex 
 
 | Item | Value |
 | --- | --- |
-| Version | 0.1.0 |
-| Revision stamp | `phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved` |
+| Version | 0.2.0 |
+| Revision stamp | `phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1` |
+| Upgraded without a full read | rows of the stamp without `; image-data/1` |
 | Metadata engine label | `exiftool-rs (via phidentify)` |
 | Tables | `files`, `metadata`, `dirs`, `runs` |
 | Commit interval | every 500 results; the plan in one transaction before reading |
 | Journal mode | WAL |
 | Defaults | `--workers 8`, `--progress-secs 60`, phindex-ox `--batch` = workers × 8 |
 | Errors printed | the first 50 per run |
-| In-memory limit | 1 GiB (phidentify); larger files get SHA-256 only |
+| In-memory limit | 1 GiB (phidentify); larger files get a streamed SHA-256, the metadata record and the tiffgraph walk from disk |
+| `image_err` reasons | `DNG: the raw-block identity applies instead`; `not a TIFF-family file or JPEG` |
+| Launch header | `phindex <commit>[-dirty] built <time>`; phindex-ox adds its domain pool |
 | Long strings in records | over 1 KiB, as `long-sha256:<hex>:<length>` |
 | Record compression | raw deflate, no zlib header |
-| Rust | 1.99.0, edition 2024; rayon pool, one SQLite writer, mimalloc |
+| Rust | 1.99.0, edition 2024; rayon pool fed in path order, one SQLite writer, mimalloc |
+| `align` | units by folder and name up to the first dot; tiers `identical`, `xmp-only`, `dng-metadata`, `image-metadata`, `lightroom`, `unit-partner` |
 | OCaml | 5.1 or later: stock OCaml (`Domain.spawn`) or OxCaml (`Domain.Safe.spawn`) |
 | Source | [github.com/firstpair/phindex](https://github.com/firstpair/phindex) |
 | Related projects | [phidentify](https://github.com/firstpair/phidentify), [tiffgraph](https://github.com/firstpair/tiffgraph), [Semantic Unison](https://github.com/querygraph/semantic-unison), [dng-compare](https://github.com/firstpair/dng-compare) |

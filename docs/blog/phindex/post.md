@@ -77,6 +77,36 @@ Memory had its own lesson. Under the macOS system allocator, the metadata engine
 
 None of the individual tricks is new. Directory mtimes, inode matching for moves, periodic commits: each is a decades-old idea. What phindex adds is the discipline of saying exactly when each one is sound, and falling back to reading when it is not. The result is an index that can be rerun after every import, every reorganization, every backup, in seconds, and so is current when you ask it something.
 
-The [manual](https://firstpair.org/books/phindex/) covers the schema, every incremental rule and its limits, the two implementations, tuning on hard disks, and the queries. Its [PDF](https://firstpair.org/phindex/pdf/), [EPUB](https://firstpair.org/phindex/epub/) and [HTML](https://firstpair.org/read/phindex/) editions are on the shelf, and the code is MIT-licensed at [github.com/firstpair/phindex](https://github.com/firstpair/phindex). It builds on [phidentify](https://github.com/firstpair/phidentify), [tiffgraph](https://github.com/firstpair/tiffgraph), [Semantic Unison](https://github.com/querygraph/semantic-unison) and [dng-compare](https://github.com/firstpair/dng-compare).
+The [manual](https://firstpair.org/books/phindex/) covers the schema, every incremental rule and its limits, the two implementations, tuning on hard disks, the queries, and aligning two archives. Its [PDF](https://firstpair.org/phindex/pdf/), [EPUB](https://firstpair.org/phindex/epub/) and [HTML](https://firstpair.org/read/phindex/) editions are on the shelf, and the code is MIT-licensed at [github.com/firstpair/phindex](https://github.com/firstpair/phindex). It builds on [phidentify](https://github.com/firstpair/phidentify), [tiffgraph](https://github.com/firstpair/tiffgraph), [Semantic Unison](https://github.com/querygraph/semantic-unison) and [dng-compare](https://github.com/firstpair/dng-compare).
+
+## Update, 2026-11-02: phindex 0.2.0
+
+The first version of this post went out with phindex 0.1.0. Within the day, running it on real archives had produced four changes worth telling, and the [manual](https://firstpair.org/books/phindex/) now covers them as version 0.2.0.
+
+### An identity that survives a time shift
+
+Every photographer has shot a trip with the camera clock still on home time, or an hour off after daylight saving, and then fixed it in ExifTool or Lightroom. The fix rewrites a few bytes of EXIF in every file. The pictures are untouched, but every file's SHA-256 is new, and a backup check by checksum now says that none of those photos is backed up.
+
+For DNGs, phindex already had an answer: the raw-block identity ignores metadata. For everything else it had none. So phidentify gained a sixth identity, `image_data`, and phindex a column for it. It hashes only the bytes that hold the picture: the image strips and tiles of a TIFF or a TIFF-based raw such as NEF, CR2, ARW or ORF, the raw data of a Panasonic RW2, the sensor data of a Fujifilm RAF, and a JPEG's compressed image without its EXIF, XMP and thumbnail segments. We tested it on real files: shifting the capture time of a TIFF, an ARW, an RW2 and a JPEG with ExifTool changed every whole-file checksum and left every `image_data` equal. DNGs are left to the raw-block identity, because a DNG's strips include previews that Lightroom regenerates when it saves metadata.
+
+### Adding it without reading the archive again
+
+A new identity is supposed to mean a new revision stamp, and a new stamp means reading every file again. On our archives that is days of disk time, to compute one value that most files cannot have: a DNG never has `image_data`, and neither does a video, a sidecar or a Capture One settings file.
+
+So 0.2.0 upgrades the rows of the previous revision instead. DNG rows are recognized in the index itself and settled by one SQL update, without opening a file. Every other unchanged file is opened and its first 16 bytes read: if they are not the start of a JPEG, a TIFF or a RAF, the row is settled there. Only the files that can have image data are read in full. On an archive of about 459,000 files, that left 94,455 files, 3.8 TB, to read, and settled 72,072 DNGs without touching them. On one of 1.6 million files, 83,003 files and 1.1 TB were read; the rest were not. The Rust and OCaml indexers, run side by side on real folders, again wrote identical rows, both fresh and upgraded.
+
+### Sixteen workers, sixteen folders
+
+Watching a run on a two-disk hard-disk RAID 0, `iostat` showed about 368 transfers a second of half a megabyte each, about 180 MB/s: nearly every read was a seek. The cause was one line. The Rust pool handed out the file list with rayon's `into_par_iter`, which splits a list into one range per thread, so sixteen workers were reading in sixteen distant parts of the archive at once, and the heads crossed the disk between almost every read. Handing the sorted list out one file at a time, in order, puts all sixteen workers in the same folder. The same array went to about 212 MB/s, and the process's CPU dropped from about 930% to about 480%, because the workers now spend their time waiting on a disk that is reading as fast as it can rather than on one that is seeking.
+
+The manual now has a section on choosing `--workers`: compare the process's CPU with workers × 100% to see whether the CPU or the disks are the limit, read `iostat`'s transfers per second and kilobytes per transfer to see whether the disks are reading or seeking, start at 8 workers on a four-disk RAID 5, and keep the total across concurrent runs under the number of cores.
+
+### Aligning two archives by identity
+
+The point of all these identities is to answer one question across two archives: is everything here also there? `phindex align` answers it from two indexes, without reading a photo. It groups each folder's files into units, a raw with its JPEG and sidecars, matches the raw by its strongest shared identity, and lets the rest of the unit follow it. Each photo then gets a verdict: identical, metadata differs, image differs, partially there, missing, or not yet indexed; and flags saying whether it was moved, renamed, split across folders or duplicated. A file that shares nothing with its counterpart, like a JPEG re-rendered from its raw, is still paired, as the raw's partner. Files that exist only on the right are listed as new or as copies of something already on the left.
+
+A trial on 1.7 million files against 1.6 million took 24 seconds and 1.6 GB of memory. The DNG pairs it finds can go straight to [dng-compare](https://github.com/firstpair/dng-compare), which compares their raw samples and metadata.
+
+Smaller things: `--only` can be repeated to index several new folders in one command, and the first line every run prints is the commit the binary was built from, so a three-day log says which code wrote its rows.
 
 *Colophon: written by Alexy Khrabrov with Claude as co-author. The ideas are Alexy's; Claude wrote the text and the code with him.*

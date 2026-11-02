@@ -77,6 +77,6 @@ The canonical post and TextPack live in `docs/blog/phindex/`, slug `phindex`,
 destination `https://firstpair.press/phindex/`. Commit and push the post and its
 assets, stamp the TextPack with `stamp-versioned-blog.sh`, commit and push the
 handoff, then deliver it to `~/icloud/blogs` with `publish-versioned-blog.sh`.
-The version comes from `BLOG_VERSION=0.1.0`, since `Cargo.toml` is under `rust/`.
+The version comes from `BLOG_VERSION=0.2.0`, since `Cargo.toml` is under `rust/`.
 File delivery does not post to Ghost; posting to any blog or forum needs the
 user's explicit instruction. Add a library `post` link only after the post is live.

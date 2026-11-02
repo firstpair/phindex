@@ -67,7 +67,8 @@ cd rust && cargo build --release && cargo test --release
 ./target/release/phindex --db archive.sqlite --root /path/to/archive --only /path/to/archive/new-folder
 ```
 
-Progress is printed every minute (`--progress-secs`) to stderr. Workers take files
+The first line printed is the build's source commit (`-dirty` when built from uncommitted
+changes) and build time. Progress is printed every minute (`--progress-secs`) to stderr. Workers take files
 in path order, so concurrent reads are of neighbouring files. With hard-disk
 arrays, watch the read rate and the request size: more workers help while the
 CPU limits, in particular for the Lightroom fingerprint's DNG decode, until the

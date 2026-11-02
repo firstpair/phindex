@@ -496,6 +496,7 @@ fn update(db_path: &str, root: &str, only: Option<&str>, full_stat: bool, worker
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
+    eprintln!("phindex {} built {}", env!("PHINDEX_COMMIT"), env!("PHINDEX_BUILT"));
     if args.get(1).map(String::as_str) == Some("align") {
         return align::run(&args[2..]);
     }

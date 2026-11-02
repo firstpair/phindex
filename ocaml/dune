@@ -7,3 +7,12 @@
   (language c)
   (names phindex_ox_stubs))
  (link_flags (-cclib -lz)))
+
+; The source commit and build time, for the launch header. Rebuilt on every build.
+(rule
+ (targets build_info.ml)
+ (deps (universe))
+ (action
+  (with-stdout-to
+   build_info.ml
+   (run sh -c "src=$(git -C %{workspace_root}/../.. rev-parse --show-toplevel 2>/dev/null); c=$(git -C \"$src\" rev-parse HEAD 2>/dev/null || echo unknown); git -C \"$src\" diff --quiet HEAD 2>/dev/null || c=\"$c-dirty\"; printf 'let commit = \"%s\"\\nlet built = \"%s\"\\n' \"$c\" \"$(TZ=America/Los_Angeles date '+%a %Y-%m-%d %H:%M:%S %Z')\""))))

@@ -364,6 +364,7 @@ let update ~db_path ~root ~only ~full_stat ~workers ~progress ~batch =
   ignore (Sqlite3.db_close db)
 
 let () =
+  Printf.eprintf "phindex-ox %s built %s (%s)\n%!" Build_info.commit Build_info.built Phidentify.backend;
   let args = Array.to_list Sys.argv in
   let rec get flag = function a :: v :: _ when a = flag -> Some v | _ :: rest -> get flag rest | [] -> None in
   let need flag = match get flag args with Some v -> v | None -> prerr_endline (flag ^ " required"); exit 2 in

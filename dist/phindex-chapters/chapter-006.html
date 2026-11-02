@@ -184,13 +184,12 @@ Queries about the current tree add <code>gone = 0</code>. A path already
 marked gone is not counted again. Directories that vanish are marked
 gone in <code>dirs</code> the same way, and a directory that reappears
 is listed in full.</p>
-<p>A gone path that comes back as a new file, with a new inode or a new
-size or mtime, is reset and read like any changed file, and is no longer
-gone. In this version, a path that comes back with the same inode, size
-and mtime it had when it vanished, such as a file moved away and then
-moved back, keeps <code>gone = 1</code>; touching the file, or copying
-it back rather than moving it, makes the next run read it and clear the
-mark.</p>
+<p>A gone path can come back. If it comes back unchanged, with the same
+inode, size and mtime it had when it vanished, as when a file is moved
+away and then moved back, it is marked present again
+(<code>gone = 0</code>) and keeps its identities; a complete row is not
+read again. If it comes back as a different file, with a new inode or a
+new size or mtime, its row is reset and read like any changed file.</p>
 <h2 data-number="5.8" id="commits-interruptions-and-resuming"><span
 class="header-section-number">5.8</span> Commits, interruptions and
 resuming</h2>

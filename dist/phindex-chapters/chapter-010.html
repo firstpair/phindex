@@ -122,7 +122,7 @@
 <h1 data-number="9" id="testing"><span
 class="header-section-number">9</span> Testing</h1>
 <p>The integration tests in <a
-href="https://github.com/firstpair/phindex/blob/f3c8bbe0ce93d2b366f4a9123f93af1677320d22/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
+href="https://github.com/firstpair/phindex/blob/10d23761a37c0f520ad75b030da084680e706d71/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
 run the phindex binary on disposable synthetic trees in a temporary
 directory, with two workers:</p>
 <ul>
@@ -137,7 +137,9 @@ walk.</strong> Renaming a folder of three files reads nothing and
 reports three moved and three gone, with the SHA-256 carried to the new
 path. With <code>--only</code> on a new folder, the new file is read and
 a file moved into the folder from outside it is carried, and its old
-path, outside <code>--only</code>, is marked gone.</li>
+path, outside <code>--only</code>, is marked gone. A file moved away and
+then back to its old path, unchanged, is not read and is no longer
+marked gone.</li>
 <li><strong>Identities are recorded separately.</strong> For a text
 file, the SHA-256 is present, the DNG identities are absent, the
 metadata digest is present, the refused grammar leaves a reason in

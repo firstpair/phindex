@@ -679,10 +679,10 @@ listed. This table is what makes the quick walk possible.</p>
 <code>started_unix</code>, <code>finished_unix</code>,
 <code>walked</code> (files in the walked scope), <code>hashed</code>
 (files identified), <code>bytes_hashed</code>, <code>gone</code> (files
-newly marked gone) and <code>errors</code>. phindex records the walked
-scope in <code>root</code>, which is the <code>--only</code> folder when
-one was given; phindex-ox records <code>--root</code>. A run that was
-interrupted leaves no row.</p>
+newly marked gone) and <code>errors</code>. Both indexers record the
+walked scope in <code>root</code>: the <code>--only</code> folder when
+one was given, otherwise <code>--root</code>. A run that was interrupted
+leaves no row.</p>
 <h1 data-number="5" id="incremental-behaviour"><span class="header-section-number">5</span> Incremental behaviour</h1>
 <h2 data-number="5.1" id="what-a-rerun-reads"><span class="header-section-number">5.1</span> What a rerun reads</h2>
 <p>A file is read when any of these is true:</p>
@@ -805,13 +805,12 @@ Queries about the current tree add <code>gone = 0</code>. A path already
 marked gone is not counted again. Directories that vanish are marked
 gone in <code>dirs</code> the same way, and a directory that reappears
 is listed in full.</p>
-<p>A gone path that comes back as a new file, with a new inode or a new
-size or mtime, is reset and read like any changed file, and is no longer
-gone. In this version, a path that comes back with the same inode, size
-and mtime it had when it vanished, such as a file moved away and then
-moved back, keeps <code>gone = 1</code>; touching the file, or copying
-it back rather than moving it, makes the next run read it and clear the
-mark.</p>
+<p>A gone path can come back. If it comes back unchanged, with the same
+inode, size and mtime it had when it vanished, as when a file is moved
+away and then moved back, it is marked present again
+(<code>gone = 0</code>) and keeps its identities; a complete row is not
+read again. If it comes back as a different file, with a new inode or a
+new size or mtime, its row is reset and read like any changed file.</p>
 <h2 data-number="5.8" id="commits-interruptions-and-resuming"><span class="header-section-number">5.8</span> Commits, interruptions and
 resuming</h2>
 <p>A run has two phases.</p>
@@ -913,13 +912,21 @@ which the metadata digest leaves out.</li>
 phindex-ox took 25 seconds and 3.5 GB.</li>
 </ul>
 <p>Equal results are the point: the identities do not depend on which
-runtime asked for them. The comparison measured totals and did not
-attribute the difference in time and memory. Two structural differences
-are the obvious candidates: phindex streams results from a pool that
-never stops, while phindex-ox spawns domains per batch and waits for
-each batch’s slowest file before the next begins. No stock OCaml timing
-was taken, so the comparison says nothing about stock OCaml’s speed
-relative to OxCaml’s.</p>
+runtime asked for them. One case is known to be open and untested: a
+TIFF or DNG over 1 GiB. phidentify’s Rust core holds files up to 1 GiB
+in memory, so for a larger file phindex reports
+<code>file over the in-memory limit</code> in <code>dngsem_err</code>,
+while phindex-ox’s walk reads through its own file descriptor and may
+accept the file and record a profile. The comparison folder held no such
+file, so on those files the two indexes may disagree in
+<code>dngsem_profile</code>, <code>dngsem_err</code> and the
+<code>preserved</code> columns. The comparison measured totals and did
+not attribute the difference in time and memory. Two structural
+differences are the obvious candidates: phindex streams results from a
+pool that never stops, while phindex-ox spawns domains per batch and
+waits for each batch’s slowest file before the next begins. No stock
+OCaml timing was taken, so the comparison says nothing about stock
+OCaml’s speed relative to OxCaml’s.</p>
 <p>For production runs, use <code>phindex</code>. Use
 <code>phindex-ox</code> when you want the indexer in OCaml, and as a
 cross-check: run both on a sample, then compare the two databases column
@@ -1077,7 +1084,7 @@ which catalog entry each digest belongs to.</p>
 <span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a>       walked, hashed, bytes_hashed, gone, errors</span>
 <span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a><span class="kw">FROM</span> runs <span class="kw">ORDER</span> <span class="kw">BY</span> started_unix <span class="kw">DESC</span> <span class="kw">LIMIT</span> <span class="dv">10</span>;</span></code></pre></div>
 <h1 data-number="9" id="testing"><span class="header-section-number">9</span> Testing</h1>
-<p>The integration tests in <a href="https://github.com/firstpair/phindex/blob/f3c8bbe0ce93d2b366f4a9123f93af1677320d22/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
+<p>The integration tests in <a href="https://github.com/firstpair/phindex/blob/10d23761a37c0f520ad75b030da084680e706d71/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
 run the phindex binary on disposable synthetic trees in a temporary
 directory, with two workers:</p>
 <ul>
@@ -1092,7 +1099,9 @@ walk.</strong> Renaming a folder of three files reads nothing and
 reports three moved and three gone, with the SHA-256 carried to the new
 path. With <code>--only</code> on a new folder, the new file is read and
 a file moved into the folder from outside it is carried, and its old
-path, outside <code>--only</code>, is marked gone.</li>
+path, outside <code>--only</code>, is marked gone. A file moved away and
+then back to its old path, unchanged, is not read and is no longer
+marked gone.</li>
 <li><strong>Identities are recorded separately.</strong> For a text
 file, the SHA-256 is present, the DNG identities are absent, the
 metadata digest is present, the refused grammar leaves a reason in

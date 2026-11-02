@@ -126,13 +126,21 @@ which the metadata digest leaves out.</li>
 phindex-ox took 25 seconds and 3.5 GB.</li>
 </ul>
 <p>Equal results are the point: the identities do not depend on which
-runtime asked for them. The comparison measured totals and did not
-attribute the difference in time and memory. Two structural differences
-are the obvious candidates: phindex streams results from a pool that
-never stops, while phindex-ox spawns domains per batch and waits for
-each batch’s slowest file before the next begins. No stock OCaml timing
-was taken, so the comparison says nothing about stock OCaml’s speed
-relative to OxCaml’s.</p>
+runtime asked for them. One case is known to be open and untested: a
+TIFF or DNG over 1 GiB. phidentify’s Rust core holds files up to 1 GiB
+in memory, so for a larger file phindex reports
+<code>file over the in-memory limit</code> in <code>dngsem_err</code>,
+while phindex-ox’s walk reads through its own file descriptor and may
+accept the file and record a profile. The comparison folder held no such
+file, so on those files the two indexes may disagree in
+<code>dngsem_profile</code>, <code>dngsem_err</code> and the
+<code>preserved</code> columns. The comparison measured totals and did
+not attribute the difference in time and memory. Two structural
+differences are the obvious candidates: phindex streams results from a
+pool that never stops, while phindex-ox spawns domains per batch and
+waits for each batch’s slowest file before the next begins. No stock
+OCaml timing was taken, so the comparison says nothing about stock
+OCaml’s speed relative to OxCaml’s.</p>
 <p>For production runs, use <code>phindex</code>. Use
 <code>phindex-ox</code> when you want the indexer in OCaml, and as a
 cross-check: run both on a sample, then compare the two databases column

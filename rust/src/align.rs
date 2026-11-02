@@ -25,7 +25,8 @@
 //! other members prefer candidates in the same right unit, so a JPEG duplicated
 //! elsewhere follows its raw. A member that shares no identity takes the right
 //! unit's member of the same kind as `unit-partner` (say, a re-rendered JPEG).
-//! Rows not yet read are reported as not indexed, never as missing.
+//! Rows not yet read are reported as not indexed, never as missing; while any
+//! right row is unread, an unmatched left unit is `not-found-yet`, not `left-only`.
 //!
 //! Report files: summary.json; units.tsv (one line per left unit); files.tsv
 //! (one line per left file); right-only.tsv (right units no left file maps to,
@@ -235,6 +236,8 @@ pub fn run(args: &[String]) -> Result<()> {
         lr: by(&right.rows, |r| r.lr.as_deref()),
     };
 
+    // While right rows are unread, an unmatched left unit may still be found.
+    let right_complete = right.rows.iter().all(|r| r.sha.is_some());
     let mut matches: Vec<Option<Match>> = (0..left.rows.len()).map(|_| None).collect();
     let mut used_right_units: HashSet<usize> = HashSet::new();
     let mut unit_target: Vec<Option<usize>> = vec![None; left.units.len()];
@@ -289,6 +292,8 @@ pub fn run(args: &[String]) -> Result<()> {
         let target = unit_target[u];
         let status: &'static str = if unindexed {
             "not-indexed"
+        } else if matched == 0 && !right_complete {
+            "not-found-yet"
         } else if matched == 0 {
             "left-only"
         } else if matched < members.len() {
@@ -381,7 +386,8 @@ pub fn run(args: &[String]) -> Result<()> {
     }
     let summary = serde_json::json!({
         "left": {"root": left.root, "files": left.rows.len(), "units": left.units.len()},
-        "right": {"root": right.root, "files": right.rows.len(), "units": right.units.len()},
+        "right": {"root": right.root, "files": right.rows.len(), "units": right.units.len(),
+                  "files_not_yet_indexed": right.rows.iter().filter(|r| r.sha.is_none()).count()},
         "left_units_by_kind_and_status": by_kind,
         "left_unit_flags": flags_count,
         "left_files_by_tier": tiers,

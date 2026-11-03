@@ -68,7 +68,16 @@ cd rust && cargo build --release && cargo test --release
 ```
 
 The first line printed is the build's source commit (`-dirty` when built from uncommitted
-changes) and build time. Progress is printed every minute (`--progress-secs`) to stderr. Workers take files
+changes) and build time. Progress is printed every minute (`--progress-secs`) to stderr. For long runs,
+`scripts/phindex-run.sh` starts this checkout's build (`--ox` for phindex-ox), keeps a Mac awake with
+`caffeinate`, appends to a log with `--log FILE`, refuses to start while another run writes the same
+index, and passes every other option through:
+
+```sh
+scripts/phindex-run.sh --db archive.sqlite --root /path/to/archive --log archive.log --workers 16
+```
+
+Workers take files
 in path order, so concurrent reads are of neighbouring files. With hard-disk
 arrays, watch the read rate and the request size: more workers help while the
 CPU limits, in particular for the Lightroom fingerprint's DNG decode, until the

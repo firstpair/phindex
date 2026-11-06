@@ -31,8 +31,11 @@
 //! Report files: summary.json; units.tsv (one line per left unit); files.tsv
 //! (one line per left file); right-only.tsv (right units no left file maps to,
 //! as `new`, or `copy` when every member's bytes are also on the left);
-//! dng-pairs.tsv and image-pairs.tsv (absolute LEFT<TAB>RIGHT paths of matched
-//! files whose bytes differ, for DNG Compare's --pairs and metadata diffs).
+//! dng-pairs.tsv and image-pairs.tsv (absolute LEFT<TAB>RIGHT paths of files
+//! matched by a shared identity whose bytes differ, for DNG Compare's --pairs and
+//! metadata diffs); partner-pairs.tsv (KIND<TAB>LEFT<TAB>RIGHT for image files
+//! matched only as unit partners: they share no identity, so a pixel comparison
+//! would only confirm they differ, or fail on a damaged file).
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OpenFlags, params};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -279,6 +282,7 @@ pub fn run(args: &[String]) -> Result<()> {
     let w = |name: &str| -> Result<BufWriter<fs::File>> { Ok(BufWriter::new(fs::File::create(Path::new(&out).join(name))?)) };
     let (mut units_tsv, mut files_tsv, mut dng_pairs, mut image_pairs, mut right_only) =
         (w("units.tsv")?, w("files.tsv")?, w("dng-pairs.tsv")?, w("image-pairs.tsv")?, w("right-only.tsv")?);
+    let mut partner_pairs = w("partner-pairs.tsv")?;
     writeln!(units_tsv, "left_unit\tkind\tstatus\tflags\tright_unit\tmembers")?;
     writeln!(files_tsv, "left\tright\ttier\tcandidates")?;
     let mut by_kind: BTreeMap<String, BTreeMap<&'static str, u64>> = BTreeMap::new();
@@ -348,9 +352,9 @@ pub fn run(args: &[String]) -> Result<()> {
                     writeln!(files_tsv, "{}\t{}\t{}\t{}", l.rel, r.rel, tier_name(m.tier), m.candidates)?;
                     let pair = format!("{}/{}\t{}/{}", left.root, l.rel, right.root, r.rel);
                     match (m.tier, l.kind) {
-                        (Tier::Identical, _) => {}
+                        (Tier::Identical, _) | (_, Kind::Sidecar | Kind::Other) => {}
+                        (Tier::UnitPartner, k) => writeln!(partner_pairs, "{}\t{pair}", kind_name(k))?,
                         (_, Kind::Dng) => writeln!(dng_pairs, "{pair}")?,
-                        (_, Kind::Sidecar | Kind::Other) => {}
                         _ => writeln!(image_pairs, "{pair}")?,
                     }
                 }
@@ -396,7 +400,7 @@ pub fn run(args: &[String]) -> Result<()> {
         "right_only_units_not_yet_indexed": right_unindexed,
     });
     fs::write(Path::new(&out).join("summary.json"), serde_json::to_string_pretty(&summary)? + "\n")?;
-    for f in [&mut units_tsv, &mut files_tsv, &mut dng_pairs, &mut image_pairs, &mut right_only] {
+    for f in [&mut units_tsv, &mut files_tsv, &mut dng_pairs, &mut image_pairs, &mut partner_pairs, &mut right_only] {
         f.flush()?;
     }
     println!("{}", serde_json::to_string_pretty(&summary)?);

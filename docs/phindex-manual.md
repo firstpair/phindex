@@ -587,8 +587,9 @@ A right unit to which no left file was matched is listed as right-only, with its
 | `units.tsv` | one line per left unit: unit, kind, status, flags, right unit, and each member's extension with its tier |
 | `files.tsv` | one line per left file: left path, right path, tier, and the number of candidates; relative to the roots |
 | `right-only.tsv` | one line per right-only unit: unit, kind, content |
-| `dng-pairs.tsv` | absolute `LEFT<TAB>RIGHT` paths of matched DNGs whose bytes differ |
+| `dng-pairs.tsv` | absolute `LEFT<TAB>RIGHT` paths of DNGs matched by a shared identity whose bytes differ |
 | `image-pairs.tsv` | the same for matched raws, JPEGs and other images |
+| `partner-pairs.tsv` | `KIND<TAB>LEFT<TAB>RIGHT` for image files matched only as unit partners: no shared identity, so not for a pixel comparison |
 
 ## From alignment to raw comparison
 
@@ -624,7 +625,7 @@ The integration test for `align`, in [`rust/tests/align.rs`](../rust/tests/align
 | `s1/IMG_6` | `jpeg` | `left-only` | | |
 | `s1/IMG_7` | `jpeg` | `not-indexed` | | |
 
-Both members of `IMG_2` matched as `image-metadata`. `IMG_4`'s JPEG had two identical candidates, the one beside `X_4.RW2` and the copy in `dup`; it chose the one in the target unit, and the unit is flagged `duplicates`. `IMG_5`'s JPEG shares no identity and matched as the unit partner of the raw, so the unit's image differs. `image-pairs.tsv` lists three pairs, `IMG_2`'s two files and `IMG_5`'s JPEG, for a closer look. `right-only.tsv` lists `s1/IMG_9` as `new` and `dup/IMG_4` as a `copy` of left content; `other/IMG_3` is not right-only, since `IMG_3`'s JPEG matched there.
+Both members of `IMG_2` matched as `image-metadata`. `IMG_4`'s JPEG had two identical candidates, the one beside `X_4.RW2` and the copy in `dup`; it chose the one in the target unit, and the unit is flagged `duplicates`. `IMG_5`'s JPEG shares no identity and matched as the unit partner of the raw, so the unit's image differs. `image-pairs.tsv` lists `IMG_2`'s two files for a closer look; `IMG_5`'s JPEG, which shares no identity, is in `partner-pairs.tsv` instead. `right-only.tsv` lists `s1/IMG_9` as `new` and `dup/IMG_4` as a `copy` of left content; `other/IMG_3` is not right-only, since `IMG_3`'s JPEG matched there.
 
 # Testing
 

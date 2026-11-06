@@ -111,8 +111,11 @@ a kind (`dng`, `dng+jpeg`, `raw+jpeg`, `jpeg`, …), a status (`identical`,
 while its files are unread) and flags (`moved`, `renamed`, `split`,
 `duplicates`). The report holds `summary.json`, `units.tsv`, `files.tsv`,
 `right-only.tsv` (new content, or copies of left content), and `dng-pairs.tsv`
-and `image-pairs.tsv`: absolute LEFT<TAB>RIGHT paths of matched files whose bytes
-differ, for [dng-compare](https://github.com/firstpair/dng-compare)'s `--pairs`.
+and `image-pairs.tsv`: absolute LEFT<TAB>RIGHT paths of files matched by a shared
+identity whose bytes differ, for [dng-compare](https://github.com/firstpair/dng-compare)'s `--pairs`.
+Image files matched only as unit partners share no identity, so they go to
+`partner-pairs.tsv` (KIND<TAB>LEFT<TAB>RIGHT) for review instead: comparing their
+pixels would only confirm a difference, or fail on a damaged copy.
 Each file's match is its strongest shared identity: SHA-256, then DNG raw blocks
 (with `xmp-only` when the preserved digest is equal too), image data, and
 Lightroom's fingerprint.

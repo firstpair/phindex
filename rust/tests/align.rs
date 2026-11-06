@@ -105,7 +105,11 @@ fn units_align_by_identity_and_follow_their_raw() {
     check("IMG_7", "jpeg", "not-indexed", "", "");
     assert!(unit("IMG_2")[5].contains("RW2:image-metadata") && unit("IMG_2")[5].contains("JPG:image-metadata"));
     let pairs = fs::read_to_string(report.join("image-pairs.tsv")).unwrap();
-    assert_eq!(pairs.lines().count(), 3, "IMG_2's two files and IMG_5's JPEG: {pairs}");
+    assert_eq!(pairs.lines().count(), 2, "IMG_2's two files, matched by image data: {pairs}");
+    // IMG_5's JPEG shares no identity: a unit partner, kept out of the comparison lists.
+    let partners = fs::read_to_string(report.join("partner-pairs.tsv")).unwrap();
+    assert_eq!(partners.lines().collect::<Vec<_>>(),
+               [format!("jpeg\t{}\t{}", l.join("s1/IMG_5.JPG").display(), r.join("s1/IMG_5.JPG").display())], "{partners}");
     let right_only = fs::read_to_string(report.join("right-only.tsv")).unwrap();
     assert!(right_only.contains("s1/IMG_9\tjpeg\tnew"), "{right_only}");
     assert!(right_only.contains("dup/IMG_4\tjpeg\tcopy"), "a second copy of left content is not new: {right_only}");

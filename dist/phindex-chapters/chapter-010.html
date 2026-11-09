@@ -5,7 +5,7 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
-  <meta name="dcterms.date" content="2026-11-02" />
+  <meta name="dcterms.date" content="2026-11-09" />
   <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
   <title>Aligning two trees</title>
   <style>
@@ -112,7 +112,7 @@
 </div>
 <div class="sitenav">
 <span class="navlink">
-<span class="navlink-label">Next:</span> <a href="chapter-011.html" accesskey="n" rel="next">Testing</a>
+<span class="navlink-label">Next:</span> <a href="chapter-011.html" accesskey="n" rel="next">Feeding dngc</a>
 </span>
 <span class="navlink">
 <span class="navlink-label">Previous:</span> <a href="chapter-009.html" accesskey="p" rel="previous">Queries</a>
@@ -135,10 +135,16 @@ of match it found.</p>
 <p>The two roots must be indexed first; they may be in two index files
 or in the same one. <code>align</code> opens the indexes read-only and
 never reads a photo. It considers the rows under each root that are not
-gone, and skips names beginning with a dot, such as
-<code>.DS_Store</code> and AppleDouble files. On a real trial, a left
-tree of 1.7 million files was aligned with a right tree of 1.6 million
-in 24 seconds, using 1.6 GB of memory.</p>
+gone, and leaves out, on both sides, every file whose name begins with a
+dot, such as <code>.DS_Store</code>, AppleDouble <code>._</code> files
+and the hidden files editors and copying tools leave behind. Only the
+file’s own name counts: a file inside a folder whose name begins with a
+dot is aligned like any other. A left-out file appears nowhere in the
+report, not even as unmatched, so a tool that walks the tree itself
+finds files <code>align</code> did not account for; <code>dngc</code>,
+below, keeps them as full copies. On a real trial, a left tree of 1.7
+million files was aligned with a right tree of 1.6 million in 24
+seconds, using 1.6 GB of memory.</p>
 <h2 data-number="9.1" id="units"><span
 class="header-section-number">9.1</span> Units</h2>
 <p>A photo is rarely one file. A raw usually has a JPEG beside it, made
@@ -335,8 +341,10 @@ each member’s extension with its tier</td>
 </tr>
 <tr>
 <td><code>files.tsv</code></td>
-<td>one line per left file: left path, right path, tier, and the number
-of candidates; relative to the roots</td>
+<td>a header line, then one line per left file: left path, right path,
+tier, and the number of candidates; relative to the roots. A file with
+no match has an empty right path and the tier <code>unmatched</code>, or
+<code>not-indexed</code> when its row is unread</td>
 </tr>
 <tr>
 <td><code>right-only.tsv</code></td>
@@ -344,17 +352,61 @@ of candidates; relative to the roots</td>
 </tr>
 <tr>
 <td><code>dng-pairs.tsv</code></td>
-<td>absolute <code>LEFT&lt;TAB&gt;RIGHT</code> paths of matched DNGs
-whose bytes differ</td>
+<td>absolute <code>LEFT&lt;TAB&gt;RIGHT</code> paths of DNGs matched by
+a shared identity whose bytes differ</td>
 </tr>
 <tr>
 <td><code>image-pairs.tsv</code></td>
 <td>the same for matched raws, JPEGs and other images</td>
 </tr>
+<tr>
+<td><code>partner-pairs.tsv</code></td>
+<td><code>KIND&lt;TAB&gt;LEFT&lt;TAB&gt;RIGHT</code> for image files
+matched only as unit partners: no shared identity, so not for a pixel
+comparison</td>
+</tr>
 </tbody>
 </table>
-<h2 data-number="9.6" id="from-alignment-to-raw-comparison"><span
-class="header-section-number">9.6</span> From alignment to raw
+<p>The two pairs files hold only pairs that share an identity. An image
+file matched only as a unit partner, with nothing in common with its
+right file but its place in the photo, goes to
+<code>partner-pairs.tsv</code> instead, with its kind (<code>dng</code>,
+<code>raw</code>, <code>jpeg</code> or <code>image</code>) first. A
+pixel or raw comparison of such a pair can only confirm that the two
+differ, or fail outright when the right file is damaged, as with a
+black, undecodable copy saved under a suffixed name beside a good
+original. These pairs are for review: open them side by side, or decide
+from <code>units.tsv</code> what the unit is. Their three columns also
+keep them from being passed by mistake where
+<code>LEFT&lt;TAB&gt;RIGHT</code> lines are expected. Identical files,
+sidecars and other files that are not images appear in none of the
+three.</p>
+<h2 data-number="9.6" id="progress"><span
+class="header-section-number">9.6</span> Progress</h2>
+<p><code>align</code> reads both indexes into memory, indexes the right
+side’s identities, matches and writes the report. On archives of more
+than a million files that takes a minute or two, and so
+<code>align</code> reports on stderr as it goes. Each stage is named
+when it starts, with its counts, and ends with the seconds since it
+began; within a long stage, a line comes every 5 seconds:</p>
+<pre class="text"><code>align: reading old.sqlite under /old/foto ...
+  412,000 files read (5s)
+  1,700,212 files in 812,409 units (21s)
+align: reading new.sqlite under /new/foto ...
+  1,612,934 files in 790,118 units (19s)
+align: indexing the right side&#39;s identities ...
+align: matching 812,409 left units ...
+  matched (3s)
+align: writing report ...
+  written (2s)</code></pre>
+<p>The numbers are illustrative; the 5-second lines appear only in a
+stage that lasts that long. Before these lines, <code>align</code>
+prints the launch header described under <em>Building and running</em>.
+Standard output carries only the JSON summary, the same as
+<code>summary.json</code>, so a caller can read it from stdout while the
+progress goes to the terminal or a log.</p>
+<h2 data-number="9.7" id="from-alignment-to-raw-comparison"><span
+class="header-section-number">9.7</span> From alignment to raw
 comparison</h2>
 <p>An alignment says which files correspond and how; it does not look at
 pixels. For DNGs, <a
@@ -365,15 +417,16 @@ compares raw samples and metadata of file pairs.
 <code>align</code> found can be fed to it directly. With
 <code>--pairs-only</code>, dng-compare compares just those pairs and
 does not walk or name-match the roots:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> run python compare_dng.py /old/foto /new/foto <span class="dt">\</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--pairs</span> report/dng-pairs.tsv <span class="at">--pairs-only</span> <span class="at">--output</span> reports/aligned-dngs</span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> run python compare_dng.py /old/foto /new/foto <span class="dt">\</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--pairs</span> report/dng-pairs.tsv <span class="at">--pairs-only</span> <span class="at">--output</span> reports/aligned-dngs</span></code></pre></div>
 <p>Identical files are left out of the pairs files, since there is
 nothing to compare, and so are sidecars, whose differences the metadata
-records already show.</p>
-<h2 data-number="9.7" id="a-worked-example"><span
-class="header-section-number">9.7</span> A worked example</h2>
+records already show. To compare and also preserve a whole tree in one
+command, use <code>dngc</code>, as the next chapter describes.</p>
+<h2 data-number="9.8" id="a-worked-example"><span
+class="header-section-number">9.8</span> A worked example</h2>
 <p>The integration test for <code>align</code>, in <a
-href="https://github.com/firstpair/phindex/blob/9589cc348f17e1d34693fa81dc3ac0be0f4ee904/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>,
+href="https://github.com/firstpair/phindex/blob/ee4e59c896a12daf94c0723bde43efde5de11738/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>,
 builds two small synthetic trees of minimal RW2 and JPEG files and
 indexes both. The left folder <code>s1</code> holds five raw+JPEG units,
 <code>IMG_1</code> to <code>IMG_5</code>, a lone <code>IMG_6.JPG</code>,
@@ -469,9 +522,10 @@ candidates, the one beside <code>X_4.RW2</code> and the copy in
 <code>dup</code>; it chose the one in the target unit, and the unit is
 flagged <code>duplicates</code>. <code>IMG_5</code>’s JPEG shares no
 identity and matched as the unit partner of the raw, so the unit’s image
-differs. <code>image-pairs.tsv</code> lists three pairs,
-<code>IMG_2</code>’s two files and <code>IMG_5</code>’s JPEG, for a
-closer look. <code>right-only.tsv</code> lists <code>s1/IMG_9</code> as
+differs. <code>image-pairs.tsv</code> lists <code>IMG_2</code>’s two
+files for a closer look; <code>IMG_5</code>’s JPEG, which shares no
+identity, is in <code>partner-pairs.tsv</code> instead.
+<code>right-only.tsv</code> lists <code>s1/IMG_9</code> as
 <code>new</code> and <code>dup/IMG_4</code> as a <code>copy</code> of
 left content; <code>other/IMG_3</code> is not right-only, since
 <code>IMG_3</code>’s JPEG matched there.</p>

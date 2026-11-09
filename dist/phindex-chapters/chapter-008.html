@@ -5,7 +5,7 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
-  <meta name="dcterms.date" content="2026-11-02" />
+  <meta name="dcterms.date" content="2026-11-09" />
   <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
   <title>Performance and tuning on hard disks</title>
   <style>
@@ -97,8 +97,30 @@ interleaving and the disks are seeking.</li>
 </ul>
 <p>The progress line’s MB/s is the indexer’s own view of the same
 thing.</p>
-<h2 data-number="7.4" id="reading-in-path-order"><span
-class="header-section-number">7.4</span> Reading in path order</h2>
+<h2 data-number="7.4" id="when-the-enclosure-limits"><span
+class="header-section-number">7.4</span> When the enclosure limits</h2>
+<p>Sometimes neither the CPU nor the disks set the limit, but the box
+the disks are in. A multi-disk enclosure has a bridge between its disks
+and the cable, and the bridge has a ceiling of its own, which need not
+be the cable’s.</p>
+<p>This is a measurement on one enclosure, not a rule: a RAID enclosure
+connected over Thunderbolt, whose internal bridge is a USB 10 Gb/s one,
+read at about 240 MB/s, and that figure did not move with more workers
+or with a larger read size. More workers did not help. Other enclosures
+will have other ceilings, and a USB 10 Gb/s link is not in itself
+limited to that rate; the cap belongs to that bridge.</p>
+<p>The sign is a read rate that stays flat whatever you change on the
+computer’s side: more workers, fewer workers, larger reads. To confirm
+it, copy one large file off the enclosure with <code>cp</code> or
+<code>dd</code> while nothing else reads from it; if a plain sequential
+copy reaches about the same rate as the indexer, the indexer already
+gets everything the enclosure gives. Then use the fewest workers that
+hold the rate, since on hard disks the extra workers only add seeks. The
+system’s view of the connection, such as macOS’s System Information
+listing the enclosure under USB rather than Thunderbolt, may show which
+bridge is inside.</p>
+<h2 data-number="7.5" id="reading-in-path-order"><span
+class="header-section-number">7.5</span> Reading in path order</h2>
 <p>Which files the workers read at the same moment matters as much as
 how many workers there are. In 0.1.0 the Rust pool took the list of
 files with rayon’s <code>into_par_iter</code>, which splits a list into
@@ -117,8 +139,8 @@ then read at about 212 MB/s, with all workers in one folder, and the
 process’s CPU use fell to about 480%: the run had become disk-bound,
 which on hard disks is where it should be. phindex-ox already handed out
 consecutive batches of the sorted list and needed no change.</p>
-<h2 data-number="7.5" id="choosing---workers"><span
-class="header-section-number">7.5</span> Choosing
+<h2 data-number="7.6" id="choosing---workers"><span
+class="header-section-number">7.6</span> Choosing
 <code>--workers</code></h2>
 <p>A worker does two things with each file, one after the other: it
 reads the whole file, and then it computes. The computing is the SHA-256
@@ -153,9 +175,9 @@ volume, keep their workers’ total below the number of cores. Each run
 that becomes CPU-bound wants all its workers on cores, and if the totals
 exceed the cores, every run slows down, the decode-heavy ones most, and
 the machine has nothing left for anything else.</p>
-<h2 data-number="7.6"
+<h2 data-number="7.7"
 id="small-files-lower-mbs-not-files-per-second"><span
-class="header-section-number">7.6</span> Small files lower MB/s, not
+class="header-section-number">7.7</span> Small files lower MB/s, not
 files per second</h2>
 <p>An archive is rarely all large DNGs. Lightroom’s <code>.xmp</code>
 sidecars, Capture One’s <code>.cop</code> and <code>.cof</code> settings
@@ -167,8 +189,8 @@ change. That is not a slowdown, and adding workers will not bring the
 MB/s back. Judge progress on such folders by files per second, and
 expect the ETA, which is computed from bytes, to be optimistic while the
 indexer is among small files and pessimistic among large ones.</p>
-<h2 data-number="7.7" id="memory"><span
-class="header-section-number">7.7</span> Memory</h2>
+<h2 data-number="7.8" id="memory"><span
+class="header-section-number">7.8</span> Memory</h2>
 <p>Each worker holds a whole file in memory while identifying it (files
 up to 1 GiB; larger ones are hashed by streaming and walked from disk),
 and the Lightroom decode holds the decoded raw image as well, two bytes

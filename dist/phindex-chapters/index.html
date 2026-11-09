@@ -5,7 +5,7 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
-  <meta name="dcterms.date" content="2026-11-02" />
+  <meta name="dcterms.date" content="2026-11-09" />
   <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
   <title>phindex</title>
   <style>
@@ -56,7 +56,7 @@
 <p class="subtitle">An index of photo identities that is cheap to
 rerun</p>
 <p class="author">Alexy Khrabrov</p>
-<p class="date">2026-11-02</p>
+<p class="date">2026-11-09</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -105,6 +105,9 @@ it prints</a></li>
 <li><a href="chapter-004.html#the-launch-header"
 id="toc-the-launch-header"><span class="toc-section-number">3.5</span>
 The launch header</a></li>
+<li><a href="chapter-004.html#the-runner-script"
+id="toc-the-runner-script"><span class="toc-section-number">3.6</span>
+The runner script</a></li>
 </ul></li>
 <li><a href="chapter-005.html#the-schema" id="toc-the-schema"><span
 class="toc-section-number">4</span> The schema</a>
@@ -189,19 +192,22 @@ When workers help</a></li>
 <li><a href="chapter-008.html#when-the-disks-limit"
 id="toc-when-the-disks-limit"><span
 class="toc-section-number">7.3</span> When the disks limit</a></li>
+<li><a href="chapter-008.html#when-the-enclosure-limits"
+id="toc-when-the-enclosure-limits"><span
+class="toc-section-number">7.4</span> When the enclosure limits</a></li>
 <li><a href="chapter-008.html#reading-in-path-order"
 id="toc-reading-in-path-order"><span
-class="toc-section-number">7.4</span> Reading in path order</a></li>
+class="toc-section-number">7.5</span> Reading in path order</a></li>
 <li><a href="chapter-008.html#choosing---workers"
-id="toc-choosing---workers"><span class="toc-section-number">7.5</span>
+id="toc-choosing---workers"><span class="toc-section-number">7.6</span>
 Choosing <code>--workers</code></a></li>
 <li><a
 href="chapter-008.html#small-files-lower-mbs-not-files-per-second"
 id="toc-small-files-lower-mbs-not-files-per-second"><span
-class="toc-section-number">7.6</span> Small files lower MB/s, not files
+class="toc-section-number">7.7</span> Small files lower MB/s, not files
 per second</a></li>
 <li><a href="chapter-008.html#memory" id="toc-memory"><span
-class="toc-section-number">7.7</span> Memory</a></li>
+class="toc-section-number">7.8</span> Memory</a></li>
 </ul></li>
 <li><a href="chapter-009.html#queries" id="toc-queries"><span
 class="toc-section-number">8</span> Queries</a>
@@ -220,8 +226,11 @@ class="toc-section-number">8.3</span> Metadata-only differences</a></li>
 id="toc-lightroom-catalog-matching"><span
 class="toc-section-number">8.4</span> Lightroom catalog
 matching</a></li>
+<li><a href="chapter-009.html#copying-an-index"
+id="toc-copying-an-index"><span class="toc-section-number">8.5</span>
+Copying an index</a></li>
 <li><a href="chapter-009.html#housekeeping" id="toc-housekeeping"><span
-class="toc-section-number">8.5</span> Housekeeping</a></li>
+class="toc-section-number">8.6</span> Housekeeping</a></li>
 </ul></li>
 <li><a href="chapter-010.html#aligning-two-trees"
 id="toc-aligning-two-trees"><span class="toc-section-number">9</span>
@@ -240,20 +249,24 @@ id="toc-right-only-units"><span class="toc-section-number">9.4</span>
 Right-only units</a></li>
 <li><a href="chapter-010.html#the-report" id="toc-the-report"><span
 class="toc-section-number">9.5</span> The report</a></li>
+<li><a href="chapter-010.html#progress" id="toc-progress"><span
+class="toc-section-number">9.6</span> Progress</a></li>
 <li><a href="chapter-010.html#from-alignment-to-raw-comparison"
 id="toc-from-alignment-to-raw-comparison"><span
-class="toc-section-number">9.6</span> From alignment to raw
+class="toc-section-number">9.7</span> From alignment to raw
 comparison</a></li>
 <li><a href="chapter-010.html#a-worked-example"
-id="toc-a-worked-example"><span class="toc-section-number">9.7</span> A
+id="toc-a-worked-example"><span class="toc-section-number">9.8</span> A
 worked example</a></li>
 </ul></li>
-<li><a href="chapter-011.html#testing" id="toc-testing"><span
-class="toc-section-number">10</span> Testing</a></li>
-<li><a href="chapter-012.html#licences" id="toc-licences"><span
-class="toc-section-number">11</span> Licences</a></li>
-<li><a href="chapter-013.html#reference" id="toc-reference"><span
-class="toc-section-number">12</span> Reference</a></li>
+<li><a href="chapter-011.html#feeding-dngc" id="toc-feeding-dngc"><span
+class="toc-section-number">10</span> Feeding dngc</a></li>
+<li><a href="chapter-012.html#testing" id="toc-testing"><span
+class="toc-section-number">11</span> Testing</a></li>
+<li><a href="chapter-013.html#licences" id="toc-licences"><span
+class="toc-section-number">12</span> Licences</a></li>
+<li><a href="chapter-014.html#reference" id="toc-reference"><span
+class="toc-section-number">13</span> Reference</a></li>
 </ul>
 </nav>
 

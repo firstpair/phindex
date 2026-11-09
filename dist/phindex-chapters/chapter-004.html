@@ -5,7 +5,7 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
-  <meta name="dcterms.date" content="2026-11-02" />
+  <meta name="dcterms.date" content="2026-11-09" />
   <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
   <title>Building and running</title>
   <style>
@@ -272,5 +272,85 @@ generated module, <code>build_info.ml</code>, which the program prints.
 A source tree without git prints <code>unknown</code> for the commit.
 The <code>-dirty</code> mark says the binary may not match any commit;
 for runs whose rows matter, build from a committed tree.</p>
+<h2 data-number="3.6" id="the-runner-script"><span
+class="header-section-number">3.6</span> The runner script</h2>
+<p>A first run of a large tree takes days, and it is easy to start one
+from the wrong build, let the machine sleep under it, lose its output
+with the terminal, or start a second run on the same index by mistake.
+<code>scripts/phindex-run.sh</code> takes care of those four things and
+nothing else:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ex">scripts/phindex-run.sh</span> <span class="at">--db</span> /Volumes/Backup/index/archive.sqlite <span class="dt">\</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--root</span> /Volumes/Archive <span class="at">--log</span> /Volumes/Backup/index/archive.log <span class="at">--workers</span> 8</span></code></pre></div>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Option</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--db FILE</code>, <code>--root DIR</code></td>
+<td>required, as for the indexer</td>
+</tr>
+<tr>
+<td><code>--ox</code></td>
+<td>run phindex-ox instead of phindex</td>
+</tr>
+<tr>
+<td><code>--log FILE</code></td>
+<td>append the run’s output, stdout and stderr together, to this file as
+well as showing it</td>
+</tr>
+<tr>
+<td>anything else</td>
+<td>passed to the indexer unchanged: <code>--only</code>,
+<code>--workers</code>, <code>--full-stat</code>,
+<code>--progress-secs</code>, <code>--batch</code></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>This checkout’s build.</strong> The script runs
+<code>rust/target/release/phindex</code> from the checkout it lives in,
+or with <code>--ox</code>
+<code>ocaml/_build/default/phindex_ox.exe</code>. It does not build. If
+the binary is missing it stops and prints the command that builds it
+(<code>cargo build --release</code> in <code>rust/</code>, or
+<code>dune build</code> in <code>ocaml/</code>). Rebuild after pulling;
+the launch header then names the commit.</li>
+<li><strong>Awake.</strong> Where <code>caffeinate</code> exists, as on
+macOS, the indexer runs under <code>caffeinate -i</code>, so the machine
+does not sleep from idleness while the run lasts. A closed lid or a
+sleep chosen from the menu still puts it to sleep, and the run waits
+with it.</li>
+<li><strong>The log.</strong> With <code>--log</code>, output goes
+through <code>tee -a</code>, so the file grows by one section per run,
+each beginning with its launch header. Without <code>--log</code>, the
+output goes to the terminal only.</li>
+<li><strong>One writer.</strong> The index path is made absolute, and
+the script refuses to start, listing the processes, when a
+<code>phindex</code> or <code>phindex_ox.exe</code> process is running
+whose command line has <code>--db</code> followed by that same absolute
+path. Every run the script starts passes its path that way, so two runs
+through the script never share an index. A run started by hand with a
+relative path, or from a binary named otherwise, is not recognised; do
+not mix the two on one index.</li>
+</ul>
+<p><strong>Stopping and resuming.</strong> Ctrl-C stops the run: the
+interrupt reaches the indexer, <code>caffeinate</code> and
+<code>tee</code> alike, and the script exits. The indexer has nothing to
+clean up. What it committed stays, at most the last uncommitted results
+(fewer than 500) are lost, and the run leaves no row in
+<code>runs</code>. To resume, run the same command again. Its quick walk
+takes the unread files’ rows from the index, sees them incomplete and
+reads them; nothing committed is read again (see <em>Commits,
+interruptions and resuming</em>). With <code>--log</code>, the last
+lines before the interrupt may be missing from the log, since
+<code>tee</code> stops too.</p>
 </body>
 </html>

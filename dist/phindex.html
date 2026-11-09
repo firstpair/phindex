@@ -5,7 +5,7 @@
   <meta name="generator" content="pandoc 3.12.1" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
-  <meta name="dcterms.date" content="2026-11-02" />
+  <meta name="dcterms.date" content="2026-11-09" />
   <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
   <title>phindex</title>
   <style>
@@ -115,7 +115,7 @@ figcaption { font-size: .88em; font-style: italic; color: #3b5563; margin-top: .
 <p class="subtitle">An index of photo identities that is cheap to
 rerun</p>
 <p class="author">Alexy Khrabrov</p>
-<p class="date">2026-11-02</p>
+<p class="date">2026-11-09</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -138,6 +138,7 @@ OxCaml)</a></li>
 <li><a href="#the-command-line" id="toc-the-command-line"><span class="toc-section-number">3.3</span> The command line</a></li>
 <li><a href="#what-it-prints" id="toc-what-it-prints"><span class="toc-section-number">3.4</span> What it prints</a></li>
 <li><a href="#the-launch-header" id="toc-the-launch-header"><span class="toc-section-number">3.5</span> The launch header</a></li>
+<li><a href="#the-runner-script" id="toc-the-runner-script"><span class="toc-section-number">3.6</span> The runner script</a></li>
 </ul></li>
 <li><a href="#the-schema" id="toc-the-schema"><span class="toc-section-number">4</span> The schema</a>
 <ul>
@@ -179,12 +180,13 @@ disks</a>
 <li><a href="#where-the-time-goes" id="toc-where-the-time-goes"><span class="toc-section-number">7.1</span> Where the time goes</a></li>
 <li><a href="#when-workers-help" id="toc-when-workers-help"><span class="toc-section-number">7.2</span> When workers help</a></li>
 <li><a href="#when-the-disks-limit" id="toc-when-the-disks-limit"><span class="toc-section-number">7.3</span> When the disks limit</a></li>
-<li><a href="#reading-in-path-order" id="toc-reading-in-path-order"><span class="toc-section-number">7.4</span> Reading in path order</a></li>
-<li><a href="#choosing---workers" id="toc-choosing---workers"><span class="toc-section-number">7.5</span> Choosing
+<li><a href="#when-the-enclosure-limits" id="toc-when-the-enclosure-limits"><span class="toc-section-number">7.4</span> When the enclosure limits</a></li>
+<li><a href="#reading-in-path-order" id="toc-reading-in-path-order"><span class="toc-section-number">7.5</span> Reading in path order</a></li>
+<li><a href="#choosing---workers" id="toc-choosing---workers"><span class="toc-section-number">7.6</span> Choosing
 <code>--workers</code></a></li>
-<li><a href="#small-files-lower-mbs-not-files-per-second" id="toc-small-files-lower-mbs-not-files-per-second"><span class="toc-section-number">7.6</span> Small files lower MB/s, not files
+<li><a href="#small-files-lower-mbs-not-files-per-second" id="toc-small-files-lower-mbs-not-files-per-second"><span class="toc-section-number">7.7</span> Small files lower MB/s, not files
 per second</a></li>
-<li><a href="#memory" id="toc-memory"><span class="toc-section-number">7.7</span> Memory</a></li>
+<li><a href="#memory" id="toc-memory"><span class="toc-section-number">7.8</span> Memory</a></li>
 </ul></li>
 <li><a href="#queries" id="toc-queries"><span class="toc-section-number">8</span> Queries</a>
 <ul>
@@ -194,7 +196,8 @@ roots</a></li>
 <li><a href="#metadata-only-differences" id="toc-metadata-only-differences"><span class="toc-section-number">8.3</span> Metadata-only differences</a></li>
 <li><a href="#lightroom-catalog-matching" id="toc-lightroom-catalog-matching"><span class="toc-section-number">8.4</span> Lightroom catalog
 matching</a></li>
-<li><a href="#housekeeping" id="toc-housekeeping"><span class="toc-section-number">8.5</span> Housekeeping</a></li>
+<li><a href="#copying-an-index" id="toc-copying-an-index"><span class="toc-section-number">8.5</span> Copying an index</a></li>
+<li><a href="#housekeeping" id="toc-housekeeping"><span class="toc-section-number">8.6</span> Housekeeping</a></li>
 </ul></li>
 <li><a href="#aligning-two-trees" id="toc-aligning-two-trees"><span class="toc-section-number">9</span> Aligning two trees</a>
 <ul>
@@ -203,13 +206,15 @@ matching</a></li>
 <li><a href="#statuses-and-flags" id="toc-statuses-and-flags"><span class="toc-section-number">9.3</span> Statuses and flags</a></li>
 <li><a href="#right-only-units" id="toc-right-only-units"><span class="toc-section-number">9.4</span> Right-only units</a></li>
 <li><a href="#the-report" id="toc-the-report"><span class="toc-section-number">9.5</span> The report</a></li>
-<li><a href="#from-alignment-to-raw-comparison" id="toc-from-alignment-to-raw-comparison"><span class="toc-section-number">9.6</span> From alignment to raw
+<li><a href="#progress" id="toc-progress"><span class="toc-section-number">9.6</span> Progress</a></li>
+<li><a href="#from-alignment-to-raw-comparison" id="toc-from-alignment-to-raw-comparison"><span class="toc-section-number">9.7</span> From alignment to raw
 comparison</a></li>
-<li><a href="#a-worked-example" id="toc-a-worked-example"><span class="toc-section-number">9.7</span> A worked example</a></li>
+<li><a href="#a-worked-example" id="toc-a-worked-example"><span class="toc-section-number">9.8</span> A worked example</a></li>
 </ul></li>
-<li><a href="#testing" id="toc-testing"><span class="toc-section-number">10</span> Testing</a></li>
-<li><a href="#licences" id="toc-licences"><span class="toc-section-number">11</span> Licences</a></li>
-<li><a href="#reference" id="toc-reference"><span class="toc-section-number">12</span> Reference</a></li>
+<li><a href="#feeding-dngc" id="toc-feeding-dngc"><span class="toc-section-number">10</span> Feeding dngc</a></li>
+<li><a href="#testing" id="toc-testing"><span class="toc-section-number">11</span> Testing</a></li>
+<li><a href="#licences" id="toc-licences"><span class="toc-section-number">12</span> Licences</a></li>
+<li><a href="#reference" id="toc-reference"><span class="toc-section-number">13</span> Reference</a></li>
 </ul>
 </nav>
 <figure>
@@ -220,14 +225,24 @@ comparison</a></li>
 <p>This manual is by Alexy Khrabrov, with Claude as co-author. The ideas
 and decisions are Alexy’s; Claude wrote the text and the code with
 him.</p>
-<p>It describes phindex 0.2.0 as of 2026-11-02: the Rust binary
+<p>It describes phindex 0.3.0 as of 2026-11-08: the Rust binary
 <code>phindex</code> and its OCaml counterpart <code>phindex-ox</code>,
 which runs under stock OCaml 5 and under OxCaml. phindex is licensed
 under the MIT License; the binaries link code under other licences, as
 the chapter on licences explains. Its source is at <a href="https://github.com/firstpair/phindex">github.com/firstpair/phindex</a>.</p>
+<p>0.3.0 changes no identity. The indexers and the revision stamp are
+those of 0.2.0, so an index 0.2.0 wrote is continued without reading
+anything again. What is new: <code>align</code> writes the image files
+it matched only as unit partners to their own list,
+<code>partner-pairs.tsv</code>, and reports its progress on stderr;
+<code>dngc</code>, DNG Compare’s unified command, takes its pairs and
+metadata from phindex indexes; and a runner script starts long runs. New
+sections also cover copying an index between volumes and a throughput
+limit set by the enclosure rather than the disks.</p>
 <p>Every example in this manual uses synthetic files or generic paths
-such as <code>/archive</code> and <code>/backup</code>. Nothing here
-depends on a particular photo library, disk or catalog.</p>
+such as <code>/archive</code>, <code>/backup</code>,
+<code>/Volumes/Archive</code> and <code>/Volumes/Backup</code>. Nothing
+here depends on a particular photo library, disk or catalog.</p>
 <h1 data-number="2" id="what-phindex-is"><span class="header-section-number">2</span> What phindex is</h1>
 <p>phindex builds, and keeps up to date, an index of every regular file
 under a directory tree, in one SQLite file. The tree might be a photo
@@ -475,39 +490,38 @@ printed as an <code>ERROR</code> line on stderr (the first 50 of a run
 are printed) and counted in the run’s errors. It is read again on the
 next run.</p>
 <h2 data-number="2.4" id="where-it-fits"><span class="header-section-number">2.4</span> Where it fits</h2>
-<p>phindex is the part of the photo-archive work that remembers. The
-other parts compute, compare and transfer:</p>
+<p>This book is one of nine on the FirstPair photo tools. Each owns one
+part, and <a href="https://firstpair.org/books/photostack/">The
+FirstPair Photo Stack</a> shows how they fit together.</p>
 <ul>
-<li><strong><a href="https://github.com/firstpair/phidentify">phidentify</a></strong>
-computes the identities, as a Rust library with a C ABI and an OCaml
-package that builds under stock OCaml and under OxCaml. phindex never
-reimplements an identity; it calls phidentify and stores what comes
-back. phidentify’s manual is on the <a href="https://firstpair.org/books/phidentify/">First Pair
-shelf</a>.</li>
-<li><strong><a href="https://github.com/firstpair/tiffgraph">tiffgraph</a></strong> is
-a bounded TIFF/DNG graph walker, in OCaml (stock OCaml and OxCaml) and
-in Rust. Under a fixed grammar it locates a DNG’s editable XMP packet
-and refuses anything outside the grammar with a reason. The
-<code>dngsem_profile</code> and <code>preserved</code> columns come from
-its walk: the Rust crate inside phidentify’s Rust core for
-<code>phindex</code>, the OCaml library inside phidentify’s OCaml
-package for <code>phindex-ox</code>. Its manual is on the <a href="https://firstpair.org/books/tiffgraph/">First Pair shelf</a>.</li>
-<li><strong><a href="https://github.com/querygraph/semantic-unison">Semantic
-Unison</a></strong> is a fork of the Unison file synchronizer that sends
-DNG metadata edits without resending image bytes. Its peers negotiate
-which tiffgraph grammar they trust, and it defines the
-<code>SDE/0-preserved</code> digest that proves a metadata transfer left
-every other byte alone. The <code>preserved</code> column is that
-digest, so an index built by phindex speaks the same identity as Unison.
-Its manual is on the <a href="https://firstpair.org/books/semantic-unison/">First Pair
-shelf</a>.</li>
-<li><strong><a href="https://github.com/firstpair/dng-compare">dng-compare</a></strong>
-compares DNG archives: it pairs files across trees, compares raw
-samples, decodes when encodings differ, and keeps metadata archives.
-phidentify’s raw-block identity is dng-compare’s block comparison turned
-into a digest, and its metadata identity uses dng-compare’s exiftool-rs
-engine. Its manual is on the <a href="https://firstpair.org/books/dng-compare/">First Pair
-shelf</a>.</li>
+<li><strong><a href="https://firstpair.org/books/tiffgraph/">tiffgraph</a></strong>
+walks a TIFF or DNG file’s structure under a fixed grammar and finds its
+editable XMP packet.</li>
+<li><strong><a href="https://firstpair.org/books/phidentify/">phidentify</a></strong>
+computes a photo’s identities: SHA-256, DNG raw blocks, image data,
+Lightroom fingerprint, metadata record and preserved digest.</li>
+<li><strong><a href="https://firstpair.org/books/phindex/">phindex</a></strong> keeps
+those identities for every file of a volume, and aligns two volumes by
+content.</li>
+<li><strong><a href="https://firstpair.org/books/dng-compare/">DNG
+Compare</a></strong> compares pairs and preserves one side byte for byte
+as deltas against the other, with a searchable metadata section, through
+<code>dngc</code>.</li>
+<li><strong><a href="https://firstpair.org/books/semantic-unison/">Semantic
+Unison</a></strong> synchronizes photo trees, sending metadata edits
+without resending image bytes, and preserves what a shuttle disk brings
+into the same archives.</li>
+<li><strong><a href="https://firstpair.org/books/packdir/">packdir</a></strong> keeps
+directories of small files as SQLite archives that still work like plain
+files.</li>
+<li><strong><a href="https://firstpair.org/books/tursolite/">Tursolite</a></strong> is
+the SQLite and Turso layer under packdir, DNG Compare and Mechanic.</li>
+<li><strong><a href="https://firstpair.org/books/diskproxy/">diskproxy</a></strong>
+serves a folder as a virtual disk, such as previews with camera metadata
+spliced in, and captures ratings into sidecars.</li>
+<li><strong><a href="https://firstpair.org/books/lightroom-repair/">Lightroom
+Repair</a></strong> repairs Lightroom Classic catalogs, previews and
+Sync without forging their state.</li>
 </ul>
 <h2 data-number="2.5" id="what-it-is-not"><span class="header-section-number">2.5</span> What it is not</h2>
 <ul>
@@ -671,6 +685,85 @@ generated module, <code>build_info.ml</code>, which the program prints.
 A source tree without git prints <code>unknown</code> for the commit.
 The <code>-dirty</code> mark says the binary may not match any commit;
 for runs whose rows matter, build from a committed tree.</p>
+<h2 data-number="3.6" id="the-runner-script"><span class="header-section-number">3.6</span> The runner script</h2>
+<p>A first run of a large tree takes days, and it is easy to start one
+from the wrong build, let the machine sleep under it, lose its output
+with the terminal, or start a second run on the same index by mistake.
+<code>scripts/phindex-run.sh</code> takes care of those four things and
+nothing else:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ex">scripts/phindex-run.sh</span> <span class="at">--db</span> /Volumes/Backup/index/archive.sqlite <span class="dt">\</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--root</span> /Volumes/Archive <span class="at">--log</span> /Volumes/Backup/index/archive.log <span class="at">--workers</span> 8</span></code></pre></div>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Option</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--db FILE</code>, <code>--root DIR</code></td>
+<td>required, as for the indexer</td>
+</tr>
+<tr>
+<td><code>--ox</code></td>
+<td>run phindex-ox instead of phindex</td>
+</tr>
+<tr>
+<td><code>--log FILE</code></td>
+<td>append the run’s output, stdout and stderr together, to this file as
+well as showing it</td>
+</tr>
+<tr>
+<td>anything else</td>
+<td>passed to the indexer unchanged: <code>--only</code>,
+<code>--workers</code>, <code>--full-stat</code>,
+<code>--progress-secs</code>, <code>--batch</code></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>This checkout’s build.</strong> The script runs
+<code>rust/target/release/phindex</code> from the checkout it lives in,
+or with <code>--ox</code>
+<code>ocaml/_build/default/phindex_ox.exe</code>. It does not build. If
+the binary is missing it stops and prints the command that builds it
+(<code>cargo build --release</code> in <code>rust/</code>, or
+<code>dune build</code> in <code>ocaml/</code>). Rebuild after pulling;
+the launch header then names the commit.</li>
+<li><strong>Awake.</strong> Where <code>caffeinate</code> exists, as on
+macOS, the indexer runs under <code>caffeinate -i</code>, so the machine
+does not sleep from idleness while the run lasts. A closed lid or a
+sleep chosen from the menu still puts it to sleep, and the run waits
+with it.</li>
+<li><strong>The log.</strong> With <code>--log</code>, output goes
+through <code>tee -a</code>, so the file grows by one section per run,
+each beginning with its launch header. Without <code>--log</code>, the
+output goes to the terminal only.</li>
+<li><strong>One writer.</strong> The index path is made absolute, and
+the script refuses to start, listing the processes, when a
+<code>phindex</code> or <code>phindex_ox.exe</code> process is running
+whose command line has <code>--db</code> followed by that same absolute
+path. Every run the script starts passes its path that way, so two runs
+through the script never share an index. A run started by hand with a
+relative path, or from a binary named otherwise, is not recognised; do
+not mix the two on one index.</li>
+</ul>
+<p><strong>Stopping and resuming.</strong> Ctrl-C stops the run: the
+interrupt reaches the indexer, <code>caffeinate</code> and
+<code>tee</code> alike, and the script exits. The indexer has nothing to
+clean up. What it committed stays, at most the last uncommitted results
+(fewer than 500) are lost, and the run leaves no row in
+<code>runs</code>. To resume, run the same command again. Its quick walk
+takes the unread files’ rows from the index, sees them incomplete and
+reads them; nothing committed is read again (see <em>Commits,
+interruptions and resuming</em>). With <code>--log</code>, the last
+lines before the interrupt may be missing from the log, since
+<code>tee</code> stops too.</p>
 <h1 data-number="4" id="the-schema"><span class="header-section-number">4</span> The schema</h1>
 <p>phindex creates four tables and migrates older ones by adding missing
 identity columns. Both indexers create the same schema.</p>
@@ -788,12 +881,12 @@ comparison and display, and the digest for equality.</p>
 <p>Because the records are kept, two files’ metadata can be compared
 field by field later without reading either file. To read one back in
 Python:</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> json, sqlite3, zlib</span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>db <span class="op">=</span> sqlite3.<span class="ex">connect</span>(<span class="st">&quot;file:archive.sqlite?mode=ro&quot;</span>, uri<span class="op">=</span><span class="va">True</span>)</span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>(blob,) <span class="op">=</span> db.execute(<span class="st">&quot;SELECT record_deflate FROM metadata WHERE path = ?&quot;</span>,</span>
-<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>                     (<span class="st">&quot;/archive/2024/IMG_0001.dng&quot;</span>,)).fetchone()</span>
-<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>record <span class="op">=</span> json.loads(zlib.decompress(blob, <span class="op">-</span><span class="dv">15</span>))</span>
-<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(record[<span class="st">&quot;ExifTool:DngCompareEngine&quot;</span>], record[<span class="st">&quot;File:FileType&quot;</span>])</span></code></pre></div>
+<div class="sourceCode" id="cb9"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> json, sqlite3, zlib</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>db <span class="op">=</span> sqlite3.<span class="ex">connect</span>(<span class="st">&quot;file:archive.sqlite?mode=ro&quot;</span>, uri<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>(blob,) <span class="op">=</span> db.execute(<span class="st">&quot;SELECT record_deflate FROM metadata WHERE path = ?&quot;</span>,</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>                     (<span class="st">&quot;/archive/2024/IMG_0001.dng&quot;</span>,)).fetchone()</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>record <span class="op">=</span> json.loads(zlib.decompress(blob, <span class="op">-</span><span class="dv">15</span>))</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(record[<span class="st">&quot;ExifTool:DngCompareEngine&quot;</span>], record[<span class="st">&quot;File:FileType&quot;</span>])</span></code></pre></div>
 <p>The record carries the engine’s stamp,
 <code>ExifTool:DngCompareEngine</code>. Compare records only between
 equal stamps.</p>
@@ -951,7 +1044,7 @@ canonicalized.</p>
 turn, in the order given, as if by separate runs one after the other:
 each has its own walk, plan, reading and row in <code>runs</code>. That
 is the way to index several new folders in one command:</p>
-<div class="sourceCode" id="cb10"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> <span class="at">--db</span> archive.sqlite <span class="at">--root</span> /archive <span class="at">--only</span> /archive/2026/card-a <span class="at">--only</span> /archive/2026/card-b</span></code></pre></div>
+<div class="sourceCode" id="cb11"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> <span class="at">--db</span> archive.sqlite <span class="at">--root</span> /archive <span class="at">--only</span> /archive/2026/card-a <span class="at">--only</span> /archive/2026/card-b</span></code></pre></div>
 <p>The caution goes the other way. <code>--only</code> is a limit for
 one run, not a setting stored in the index. A later run without
 <code>--only</code> walks the whole root, and if the index has never
@@ -1188,7 +1281,28 @@ interleaving and the disks are seeking.</li>
 </ul>
 <p>The progress line’s MB/s is the indexer’s own view of the same
 thing.</p>
-<h2 data-number="7.4" id="reading-in-path-order"><span class="header-section-number">7.4</span> Reading in path order</h2>
+<h2 data-number="7.4" id="when-the-enclosure-limits"><span class="header-section-number">7.4</span> When the enclosure limits</h2>
+<p>Sometimes neither the CPU nor the disks set the limit, but the box
+the disks are in. A multi-disk enclosure has a bridge between its disks
+and the cable, and the bridge has a ceiling of its own, which need not
+be the cable’s.</p>
+<p>This is a measurement on one enclosure, not a rule: a RAID enclosure
+connected over Thunderbolt, whose internal bridge is a USB 10 Gb/s one,
+read at about 240 MB/s, and that figure did not move with more workers
+or with a larger read size. More workers did not help. Other enclosures
+will have other ceilings, and a USB 10 Gb/s link is not in itself
+limited to that rate; the cap belongs to that bridge.</p>
+<p>The sign is a read rate that stays flat whatever you change on the
+computer’s side: more workers, fewer workers, larger reads. To confirm
+it, copy one large file off the enclosure with <code>cp</code> or
+<code>dd</code> while nothing else reads from it; if a plain sequential
+copy reaches about the same rate as the indexer, the indexer already
+gets everything the enclosure gives. Then use the fewest workers that
+hold the rate, since on hard disks the extra workers only add seeks. The
+system’s view of the connection, such as macOS’s System Information
+listing the enclosure under USB rather than Thunderbolt, may show which
+bridge is inside.</p>
+<h2 data-number="7.5" id="reading-in-path-order"><span class="header-section-number">7.5</span> Reading in path order</h2>
 <p>Which files the workers read at the same moment matters as much as
 how many workers there are. In 0.1.0 the Rust pool took the list of
 files with rayon’s <code>into_par_iter</code>, which splits a list into
@@ -1207,7 +1321,7 @@ then read at about 212 MB/s, with all workers in one folder, and the
 process’s CPU use fell to about 480%: the run had become disk-bound,
 which on hard disks is where it should be. phindex-ox already handed out
 consecutive batches of the sorted list and needed no change.</p>
-<h2 data-number="7.5" id="choosing---workers"><span class="header-section-number">7.5</span> Choosing
+<h2 data-number="7.6" id="choosing---workers"><span class="header-section-number">7.6</span> Choosing
 <code>--workers</code></h2>
 <p>A worker does two things with each file, one after the other: it
 reads the whole file, and then it computes. The computing is the SHA-256
@@ -1242,7 +1356,7 @@ volume, keep their workers’ total below the number of cores. Each run
 that becomes CPU-bound wants all its workers on cores, and if the totals
 exceed the cores, every run slows down, the decode-heavy ones most, and
 the machine has nothing left for anything else.</p>
-<h2 data-number="7.6" id="small-files-lower-mbs-not-files-per-second"><span class="header-section-number">7.6</span> Small files lower MB/s, not
+<h2 data-number="7.7" id="small-files-lower-mbs-not-files-per-second"><span class="header-section-number">7.7</span> Small files lower MB/s, not
 files per second</h2>
 <p>An archive is rarely all large DNGs. Lightroom’s <code>.xmp</code>
 sidecars, Capture One’s <code>.cop</code> and <code>.cof</code> settings
@@ -1254,7 +1368,7 @@ change. That is not a slowdown, and adding workers will not bring the
 MB/s back. Judge progress on such folders by files per second, and
 expect the ETA, which is computed from bytes, to be optimistic while the
 indexer is among small files and pessimistic among large ones.</p>
-<h2 data-number="7.7" id="memory"><span class="header-section-number">7.7</span> Memory</h2>
+<h2 data-number="7.8" id="memory"><span class="header-section-number">7.8</span> Memory</h2>
 <p>Each worker holds a whole file in memory while identifying it (files
 up to 1 GiB; larger ones are hashed by streaming and walked from disk),
 and the Lightroom decode holds the decoded raw image as well, two bytes
@@ -1282,19 +1396,19 @@ your stored, canonical paths.</p>
 <code>/photos</code> sorts between <code>/photos/</code> and
 <code>/photos0</code>, because <code>0</code> is the character after
 <code>/</code>, and the range uses the primary-key index:</p>
-<div class="sourceCode" id="cb11"><pre class="sourceCode sql"><code class="sourceCode sql"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> <span class="fu">count</span>(<span class="op">*</span>), <span class="fu">sum</span>(<span class="kw">size</span>) <span class="kw">FROM</span> files</span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="kw">WHERE</span> path <span class="op">&gt;=</span> <span class="st">&#39;/photos/&#39;</span> <span class="kw">AND</span> path <span class="op">&lt;</span> <span class="st">&#39;/photos0&#39;</span> <span class="kw">AND</span> gone <span class="op">=</span> <span class="dv">0</span>;</span></code></pre></div>
+<div class="sourceCode" id="cb12"><pre class="sourceCode sql"><code class="sourceCode sql"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> <span class="fu">count</span>(<span class="op">*</span>), <span class="fu">sum</span>(<span class="kw">size</span>) <span class="kw">FROM</span> files</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="kw">WHERE</span> path <span class="op">&gt;=</span> <span class="st">&#39;/photos/&#39;</span> <span class="kw">AND</span> path <span class="op">&lt;</span> <span class="st">&#39;/photos0&#39;</span> <span class="kw">AND</span> gone <span class="op">=</span> <span class="dv">0</span>;</span></code></pre></div>
 <h2 data-number="8.2" id="containment-between-two-roots"><span class="header-section-number">8.2</span> Containment between two
 roots</h2>
 <p>Which files under one root have no byte-identical copy under
 another?</p>
-<div class="sourceCode" id="cb12"><pre class="sourceCode sql"><code class="sourceCode sql"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> a.path <span class="kw">FROM</span> files a</span>
-<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="kw">WHERE</span> a.path <span class="op">&gt;=</span> <span class="st">&#39;/photos/&#39;</span> <span class="kw">AND</span> a.path <span class="op">&lt;</span> <span class="st">&#39;/photos0&#39;</span> <span class="kw">AND</span> a.gone <span class="op">=</span> <span class="dv">0</span></span>
-<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>  <span class="kw">AND</span> a.sha256 <span class="kw">IS</span> <span class="kw">NOT</span> <span class="kw">NULL</span></span>
-<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>  <span class="kw">AND</span> <span class="kw">NOT</span> <span class="kw">EXISTS</span> (</span>
-<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">SELECT</span> <span class="dv">1</span> <span class="kw">FROM</span> files b</span>
-<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">WHERE</span> b.sha256 <span class="op">=</span> a.sha256 <span class="kw">AND</span> b.gone <span class="op">=</span> <span class="dv">0</span></span>
-<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>      <span class="kw">AND</span> b.path <span class="op">&gt;=</span> <span class="st">&#39;/backup/&#39;</span> <span class="kw">AND</span> b.path <span class="op">&lt;</span> <span class="st">&#39;/backup0&#39;</span>);</span></code></pre></div>
+<div class="sourceCode" id="cb13"><pre class="sourceCode sql"><code class="sourceCode sql"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> a.path <span class="kw">FROM</span> files a</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="kw">WHERE</span> a.path <span class="op">&gt;=</span> <span class="st">&#39;/photos/&#39;</span> <span class="kw">AND</span> a.path <span class="op">&lt;</span> <span class="st">&#39;/photos0&#39;</span> <span class="kw">AND</span> a.gone <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>  <span class="kw">AND</span> a.sha256 <span class="kw">IS</span> <span class="kw">NOT</span> <span class="kw">NULL</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>  <span class="kw">AND</span> <span class="kw">NOT</span> <span class="kw">EXISTS</span> (</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">SELECT</span> <span class="dv">1</span> <span class="kw">FROM</span> files b</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">WHERE</span> b.sha256 <span class="op">=</span> a.sha256 <span class="kw">AND</span> b.gone <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>      <span class="kw">AND</span> b.path <span class="op">&gt;=</span> <span class="st">&#39;/backup/&#39;</span> <span class="kw">AND</span> b.path <span class="op">&lt;</span> <span class="st">&#39;/backup0&#39;</span>);</span></code></pre></div>
 <p>The <code>a.sha256 IS NOT NULL</code> line keeps files that were
 never identified out of the answer; list them separately, since the
 index does not know yet whether they are backed up. Replace
@@ -1306,9 +1420,9 @@ happened to its metadata?”</p>
 files with equal <code>preserved</code> digests under the same
 <code>dngsem_profile</code> have every byte outside the packet equal; if
 their SHA-256s differ, the difference is inside the packet.</p>
-<div class="sourceCode" id="cb13"><pre class="sourceCode sql"><code class="sourceCode sql"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> a.path, b.path <span class="kw">FROM</span> files a <span class="kw">JOIN</span> files b</span>
-<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">ON</span> a.preserved <span class="op">=</span> b.preserved <span class="kw">AND</span> a.dngsem_profile <span class="op">=</span> b.dngsem_profile</span>
-<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="kw">WHERE</span> a.sha256 <span class="op">&lt;&gt;</span> b.sha256 <span class="kw">AND</span> a.gone <span class="op">=</span> <span class="dv">0</span> <span class="kw">AND</span> b.gone <span class="op">=</span> <span class="dv">0</span> <span class="kw">AND</span> a.path <span class="op">&lt;</span> b.path;</span></code></pre></div>
+<div class="sourceCode" id="cb14"><pre class="sourceCode sql"><code class="sourceCode sql"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> a.path, b.path <span class="kw">FROM</span> files a <span class="kw">JOIN</span> files b</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">ON</span> a.preserved <span class="op">=</span> b.preserved <span class="kw">AND</span> a.dngsem_profile <span class="op">=</span> b.dngsem_profile</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="kw">WHERE</span> a.sha256 <span class="op">&lt;&gt;</span> b.sha256 <span class="kw">AND</span> a.gone <span class="op">=</span> <span class="dv">0</span> <span class="kw">AND</span> b.gone <span class="op">=</span> <span class="dv">0</span> <span class="kw">AND</span> a.path <span class="op">&lt;</span> b.path;</span></code></pre></div>
 <p>Compare <code>preserved</code> only under the same profile: the
 profile is part of what the digest means. To see what changed in the
 packet, decompress the two <code>metadata</code> records and compare
@@ -1324,11 +1438,11 @@ catalog, in the <code>digest</code> column of the
 <code>fileSize</code>. <code>lr_digest</code> is the same value, in the
 same upper-case hex, for the DNGs phidentify supports. Attach a
 <strong>copy</strong> of the catalog, never the live file:</p>
-<div class="sourceCode" id="cb14"><pre class="sourceCode sql"><code class="sourceCode sql"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>ATTACH <span class="st">&#39;file:catalog-copy.lrcat?mode=ro</span><span class="ch">&amp;immutable</span><span class="st">=1&#39;</span> <span class="kw">AS</span> cat;</span>
-<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> f.path, d.digest <span class="kw">FROM</span> files f</span>
-<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="kw">JOIN</span> cat.AgLibraryFileDigest d</span>
-<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>  <span class="kw">ON</span> d.digest <span class="op">=</span> f.lr_digest <span class="kw">AND</span> d.fileSize <span class="op">=</span> f.<span class="kw">size</span></span>
-<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="kw">WHERE</span> f.gone <span class="op">=</span> <span class="dv">0</span>;</span></code></pre></div>
+<div class="sourceCode" id="cb15"><pre class="sourceCode sql"><code class="sourceCode sql"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>ATTACH <span class="st">&#39;file:catalog-copy.lrcat?mode=ro</span><span class="ch">&amp;immutable</span><span class="st">=1&#39;</span> <span class="kw">AS</span> cat;</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> f.path, d.digest <span class="kw">FROM</span> files f</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="kw">JOIN</span> cat.AgLibraryFileDigest d</span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>  <span class="kw">ON</span> d.digest <span class="op">=</span> f.lr_digest <span class="kw">AND</span> d.fileSize <span class="op">=</span> f.<span class="kw">size</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="kw">WHERE</span> f.gone <span class="op">=</span> <span class="dv">0</span>;</span></code></pre></div>
 <p>Opening the copy with <code>immutable=1</code> keeps SQLite from
 creating journal files beside it; the <code>file:</code> form needs URI
 filenames, which the <code>sqlite3</code> shell accepts. An equal
@@ -1338,21 +1452,85 @@ file with <code>lr_err</code> set gets no answer from the index, not a
 “no”: the fingerprint is defined only for the supported strata. Join
 <code>AgLibraryFileDigest</code> to the catalog’s other tables to see
 which catalog entry each digest belongs to.</p>
-<h2 data-number="8.5" id="housekeeping"><span class="header-section-number">8.5</span> Housekeeping</h2>
-<div class="sourceCode" id="cb15"><pre class="sourceCode sql"><code class="sourceCode sql"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- why identities failed, most common first</span></span>
-<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> lr_err, <span class="fu">count</span>(<span class="op">*</span>) <span class="kw">FROM</span> files <span class="kw">WHERE</span> lr_err <span class="kw">IS</span> <span class="kw">NOT</span> <span class="kw">NULL</span> <span class="kw">AND</span> gone <span class="op">=</span> <span class="dv">0</span></span>
-<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="kw">GROUP</span> <span class="kw">BY</span> lr_err <span class="kw">ORDER</span> <span class="kw">BY</span> <span class="dv">2</span> <span class="kw">DESC</span>;</span>
-<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="co">-- files still to read (never identified, failed, or from an older revision)</span></span>
-<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> <span class="fu">count</span>(<span class="op">*</span>) <span class="kw">FROM</span> files <span class="kw">WHERE</span> gone <span class="op">=</span> <span class="dv">0</span></span>
-<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>  <span class="kw">AND</span> (sha256 <span class="kw">IS</span> <span class="kw">NULL</span> <span class="kw">OR</span> ids_rev <span class="kw">IS</span> <span class="kw">NOT</span></span>
-<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>       <span class="st">&#39;phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1&#39;</span>);</span>
-<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a><span class="co">-- the last runs</span></span>
-<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> root, datetime(started_unix, <span class="st">&#39;unixepoch&#39;</span>) <span class="kw">AS</span> started,</span>
-<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a>       finished_unix <span class="op">-</span> started_unix <span class="kw">AS</span> secs,</span>
-<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>       walked, hashed, bytes_hashed, gone, errors</span>
-<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a><span class="kw">FROM</span> runs <span class="kw">ORDER</span> <span class="kw">BY</span> started_unix <span class="kw">DESC</span> <span class="kw">LIMIT</span> <span class="dv">10</span>;</span></code></pre></div>
+<h2 data-number="8.5" id="copying-an-index"><span class="header-section-number">8.5</span> Copying an index</h2>
+<p>An index is in WAL mode, which is what lets queries run while the
+indexer writes. WAL mode is recorded in the database file itself, so a
+closed index, and every plain copy of one, is still a WAL database, and
+that changes what a read-only open does with it:</p>
+<ul>
+<li><strong>A plain read-only open writes beside the file.</strong>
+Opened with SQLite’s <code>mode=ro</code> and nothing else, a WAL
+database needs its <code>-shm</code> (shared-memory index) and
+<code>-wal</code> files. Where they are missing, current SQLite creates
+them beside the database, read-only open or not, and they stay after the
+connection closes. A backup volume that should hold one file per index
+then holds three, and a volume mounted read-only cannot take them at
+all, so the open fails.</li>
+<li><strong>macOS’s own SQLite refuses instead.</strong> The
+<code>sqlite3</code> that ships with macOS fails to open a WAL database
+read-only when its <code>-shm</code> file is missing, with
+<code>unable to open database file</code>, even in a writable
+folder.</li>
+</ul>
+<p>Both were checked on a synthetic WAL database: SQLite 3.54 created
+<code>-wal</code> and <code>-shm</code> on a <code>mode=ro</code> open,
+macOS’s <code>sqlite3</code> 3.43.2 refused it, and both failed in a
+read-only folder.</p>
+<p><code>phindex align</code> opens its indexes with such a plain
+read-only open, through the SQLite built into phindex. On a WAL-mode
+index it creates <code>-wal</code> and <code>-shm</code> beside the
+file, and in a read-only folder it fails with
+<code>attempt to write a readonly database</code>; both were seen on
+synthetic indexes. Give it indexes in a writable folder, or copies
+switched out of WAL mode as below.</p>
+<p>There are two ways around it.</p>
+<p><strong>Read a closed index with <code>immutable=1</code>.</strong>
+<code>immutable=1</code> tells SQLite that the file cannot change, so it
+takes no locks and needs no <code>-shm</code> or <code>-wal</code>. Use
+it only while no indexer is writing that index: an immutable reader does
+not see a writer’s changes and can read a half-updated file. DNG
+Compare’s <code>dngc</code> opens phindex indexes this way.</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="ex">sqlite3</span> <span class="st">&#39;file:/Volumes/Backup/index/archive.sqlite?immutable=1&#39;</span> <span class="dt">\</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>  <span class="st">&#39;SELECT count(*) FROM files&#39;</span></span></code></pre></div>
+<p><strong>Copy it, then take the copy out of WAL mode.</strong> Copy
+the closed index with <code>cp</code> to a writable place, switch the
+copy’s journal mode, and then move it where it should live:</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cp</span> ~/indexes/archive.sqlite /tmp/archive.sqlite                 <span class="co"># no indexer running</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="ex">sqlite3</span> /tmp/archive.sqlite <span class="st">&#39;PRAGMA journal_mode=DELETE&#39;</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a><span class="fu">rm</span> <span class="at">-f</span> /tmp/archive.sqlite-shm /tmp/archive.sqlite-wal           <span class="co"># if any were left</span></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a><span class="fu">mv</span> /tmp/archive.sqlite /Volumes/Backup/index/archive.sqlite</span></code></pre></div>
+<p>The copy is then an ordinary rollback-journal database: a
+<code>mode=ro</code> open reads it without creating anything, also on a
+read-only volume. The <code>rm</code> is there because macOS’s
+<code>sqlite3</code> leaves a <code>-shm</code> file behind after the
+switch; a database out of WAL mode does not use it, and once no
+connection is open it can go. Copy only an index no indexer is writing;
+a copy taken during a run can miss what is still in the
+<code>-wal</code> file. To continue indexing into such a copy, just run
+the indexer on it: it switches the file back to WAL mode when it opens
+it.</p>
+<p>Keep a short README beside index copies on a volume, so that whoever
+finds them later does not open them the way that writes beside them:</p>
+<pre class="text"><code>These are phindex indexes (SQLite), copied here with journal_mode=DELETE.
+Read them with a read-only open (mode=ro) or with immutable=1.
+A copy still in WAL mode must be read with immutable=1, or copied and
+switched with PRAGMA journal_mode=DELETE first; a plain read-only open
+creates -wal and -shm files beside it, and macOS&#39;s sqlite3 refuses it.</code></pre>
+<h2 data-number="8.6" id="housekeeping"><span class="header-section-number">8.6</span> Housekeeping</h2>
+<div class="sourceCode" id="cb19"><pre class="sourceCode sql"><code class="sourceCode sql"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- why identities failed, most common first</span></span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> lr_err, <span class="fu">count</span>(<span class="op">*</span>) <span class="kw">FROM</span> files <span class="kw">WHERE</span> lr_err <span class="kw">IS</span> <span class="kw">NOT</span> <span class="kw">NULL</span> <span class="kw">AND</span> gone <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a><span class="kw">GROUP</span> <span class="kw">BY</span> lr_err <span class="kw">ORDER</span> <span class="kw">BY</span> <span class="dv">2</span> <span class="kw">DESC</span>;</span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a><span class="co">-- files still to read (never identified, failed, or from an older revision)</span></span>
+<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> <span class="fu">count</span>(<span class="op">*</span>) <span class="kw">FROM</span> files <span class="kw">WHERE</span> gone <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a>  <span class="kw">AND</span> (sha256 <span class="kw">IS</span> <span class="kw">NULL</span> <span class="kw">OR</span> ids_rev <span class="kw">IS</span> <span class="kw">NOT</span></span>
+<span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a>       <span class="st">&#39;phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1&#39;</span>);</span>
+<span id="cb19-9"><a href="#cb19-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-10"><a href="#cb19-10" aria-hidden="true" tabindex="-1"></a><span class="co">-- the last runs</span></span>
+<span id="cb19-11"><a href="#cb19-11" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> root, datetime(started_unix, <span class="st">&#39;unixepoch&#39;</span>) <span class="kw">AS</span> started,</span>
+<span id="cb19-12"><a href="#cb19-12" aria-hidden="true" tabindex="-1"></a>       finished_unix <span class="op">-</span> started_unix <span class="kw">AS</span> secs,</span>
+<span id="cb19-13"><a href="#cb19-13" aria-hidden="true" tabindex="-1"></a>       walked, hashed, bytes_hashed, gone, errors</span>
+<span id="cb19-14"><a href="#cb19-14" aria-hidden="true" tabindex="-1"></a><span class="kw">FROM</span> runs <span class="kw">ORDER</span> <span class="kw">BY</span> started_unix <span class="kw">DESC</span> <span class="kw">LIMIT</span> <span class="dv">10</span>;</span></code></pre></div>
 <h1 data-number="9" id="aligning-two-trees"><span class="header-section-number">9</span> Aligning two trees</h1>
 <p>The containment query in the previous chapter answers one question:
 is every file’s exact bytes somewhere else? Real archives need a finer
@@ -1363,15 +1541,21 @@ that missing. <code>phindex align</code> instead accounts for every file
 under a <strong>left</strong> root in a <strong>right</strong> root by
 identity, file by file and photo by photo, and says for each what kind
 of match it found.</p>
-<div class="sourceCode" id="cb16"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> align <span class="at">--left</span> old.sqlite <span class="at">--left-root</span> /old/foto <span class="dt">\</span></span>
-<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--right</span> new.sqlite <span class="at">--right-root</span> /new/foto <span class="at">--out</span> report</span></code></pre></div>
+<div class="sourceCode" id="cb20"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> align <span class="at">--left</span> old.sqlite <span class="at">--left-root</span> /old/foto <span class="dt">\</span></span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--right</span> new.sqlite <span class="at">--right-root</span> /new/foto <span class="at">--out</span> report</span></code></pre></div>
 <p>The two roots must be indexed first; they may be in two index files
 or in the same one. <code>align</code> opens the indexes read-only and
 never reads a photo. It considers the rows under each root that are not
-gone, and skips names beginning with a dot, such as
-<code>.DS_Store</code> and AppleDouble files. On a real trial, a left
-tree of 1.7 million files was aligned with a right tree of 1.6 million
-in 24 seconds, using 1.6 GB of memory.</p>
+gone, and leaves out, on both sides, every file whose name begins with a
+dot, such as <code>.DS_Store</code>, AppleDouble <code>._</code> files
+and the hidden files editors and copying tools leave behind. Only the
+file’s own name counts: a file inside a folder whose name begins with a
+dot is aligned like any other. A left-out file appears nowhere in the
+report, not even as unmatched, so a tool that walks the tree itself
+finds files <code>align</code> did not account for; <code>dngc</code>,
+below, keeps them as full copies. On a real trial, a left tree of 1.7
+million files was aligned with a right tree of 1.6 million in 24
+seconds, using 1.6 GB of memory.</p>
 <h2 data-number="9.1" id="units"><span class="header-section-number">9.1</span> Units</h2>
 <p>A photo is rarely one file. A raw usually has a JPEG beside it, made
 by the camera, and an XMP sidecar written by an editor.
@@ -1563,8 +1747,10 @@ each member’s extension with its tier</td>
 </tr>
 <tr>
 <td><code>files.tsv</code></td>
-<td>one line per left file: left path, right path, tier, and the number
-of candidates; relative to the roots</td>
+<td>a header line, then one line per left file: left path, right path,
+tier, and the number of candidates; relative to the roots. A file with
+no match has an empty right path and the tier <code>unmatched</code>, or
+<code>not-indexed</code> when its row is unread</td>
 </tr>
 <tr>
 <td><code>right-only.tsv</code></td>
@@ -1572,16 +1758,59 @@ of candidates; relative to the roots</td>
 </tr>
 <tr>
 <td><code>dng-pairs.tsv</code></td>
-<td>absolute <code>LEFT&lt;TAB&gt;RIGHT</code> paths of matched DNGs
-whose bytes differ</td>
+<td>absolute <code>LEFT&lt;TAB&gt;RIGHT</code> paths of DNGs matched by
+a shared identity whose bytes differ</td>
 </tr>
 <tr>
 <td><code>image-pairs.tsv</code></td>
 <td>the same for matched raws, JPEGs and other images</td>
 </tr>
+<tr>
+<td><code>partner-pairs.tsv</code></td>
+<td><code>KIND&lt;TAB&gt;LEFT&lt;TAB&gt;RIGHT</code> for image files
+matched only as unit partners: no shared identity, so not for a pixel
+comparison</td>
+</tr>
 </tbody>
 </table>
-<h2 data-number="9.6" id="from-alignment-to-raw-comparison"><span class="header-section-number">9.6</span> From alignment to raw
+<p>The two pairs files hold only pairs that share an identity. An image
+file matched only as a unit partner, with nothing in common with its
+right file but its place in the photo, goes to
+<code>partner-pairs.tsv</code> instead, with its kind (<code>dng</code>,
+<code>raw</code>, <code>jpeg</code> or <code>image</code>) first. A
+pixel or raw comparison of such a pair can only confirm that the two
+differ, or fail outright when the right file is damaged, as with a
+black, undecodable copy saved under a suffixed name beside a good
+original. These pairs are for review: open them side by side, or decide
+from <code>units.tsv</code> what the unit is. Their three columns also
+keep them from being passed by mistake where
+<code>LEFT&lt;TAB&gt;RIGHT</code> lines are expected. Identical files,
+sidecars and other files that are not images appear in none of the
+three.</p>
+<h2 data-number="9.6" id="progress"><span class="header-section-number">9.6</span> Progress</h2>
+<p><code>align</code> reads both indexes into memory, indexes the right
+side’s identities, matches and writes the report. On archives of more
+than a million files that takes a minute or two, and so
+<code>align</code> reports on stderr as it goes. Each stage is named
+when it starts, with its counts, and ends with the seconds since it
+began; within a long stage, a line comes every 5 seconds:</p>
+<pre class="text"><code>align: reading old.sqlite under /old/foto ...
+  412,000 files read (5s)
+  1,700,212 files in 812,409 units (21s)
+align: reading new.sqlite under /new/foto ...
+  1,612,934 files in 790,118 units (19s)
+align: indexing the right side&#39;s identities ...
+align: matching 812,409 left units ...
+  matched (3s)
+align: writing report ...
+  written (2s)</code></pre>
+<p>The numbers are illustrative; the 5-second lines appear only in a
+stage that lasts that long. Before these lines, <code>align</code>
+prints the launch header described under <em>Building and running</em>.
+Standard output carries only the JSON summary, the same as
+<code>summary.json</code>, so a caller can read it from stdout while the
+progress goes to the terminal or a log.</p>
+<h2 data-number="9.7" id="from-alignment-to-raw-comparison"><span class="header-section-number">9.7</span> From alignment to raw
 comparison</h2>
 <p>An alignment says which files correspond and how; it does not look at
 pixels. For DNGs, <a href="https://github.com/firstpair/dng-compare">dng-compare</a> does: it
@@ -1591,13 +1820,14 @@ compares raw samples and metadata of file pairs.
 <code>align</code> found can be fed to it directly. With
 <code>--pairs-only</code>, dng-compare compares just those pairs and
 does not walk or name-match the roots:</p>
-<div class="sourceCode" id="cb17"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> run python compare_dng.py /old/foto /new/foto <span class="dt">\</span></span>
-<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--pairs</span> report/dng-pairs.tsv <span class="at">--pairs-only</span> <span class="at">--output</span> reports/aligned-dngs</span></code></pre></div>
+<div class="sourceCode" id="cb22"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> run python compare_dng.py /old/foto /new/foto <span class="dt">\</span></span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--pairs</span> report/dng-pairs.tsv <span class="at">--pairs-only</span> <span class="at">--output</span> reports/aligned-dngs</span></code></pre></div>
 <p>Identical files are left out of the pairs files, since there is
 nothing to compare, and so are sidecars, whose differences the metadata
-records already show.</p>
-<h2 data-number="9.7" id="a-worked-example"><span class="header-section-number">9.7</span> A worked example</h2>
-<p>The integration test for <code>align</code>, in <a href="https://github.com/firstpair/phindex/blob/9589cc348f17e1d34693fa81dc3ac0be0f4ee904/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>,
+records already show. To compare and also preserve a whole tree in one
+command, use <code>dngc</code>, as the next chapter describes.</p>
+<h2 data-number="9.8" id="a-worked-example"><span class="header-section-number">9.8</span> A worked example</h2>
+<p>The integration test for <code>align</code>, in <a href="https://github.com/firstpair/phindex/blob/ee4e59c896a12daf94c0723bde43efde5de11738/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>,
 builds two small synthetic trees of minimal RW2 and JPEG files and
 indexes both. The left folder <code>s1</code> holds five raw+JPEG units,
 <code>IMG_1</code> to <code>IMG_5</code>, a lone <code>IMG_6.JPG</code>,
@@ -1693,14 +1923,90 @@ candidates, the one beside <code>X_4.RW2</code> and the copy in
 <code>dup</code>; it chose the one in the target unit, and the unit is
 flagged <code>duplicates</code>. <code>IMG_5</code>’s JPEG shares no
 identity and matched as the unit partner of the raw, so the unit’s image
-differs. <code>image-pairs.tsv</code> lists three pairs,
-<code>IMG_2</code>’s two files and <code>IMG_5</code>’s JPEG, for a
-closer look. <code>right-only.tsv</code> lists <code>s1/IMG_9</code> as
+differs. <code>image-pairs.tsv</code> lists <code>IMG_2</code>’s two
+files for a closer look; <code>IMG_5</code>’s JPEG, which shares no
+identity, is in <code>partner-pairs.tsv</code> instead.
+<code>right-only.tsv</code> lists <code>s1/IMG_9</code> as
 <code>new</code> and <code>dup/IMG_4</code> as a <code>copy</code> of
 left content; <code>other/IMG_3</code> is not right-only, since
 <code>IMG_3</code>’s JPEG matched there.</p>
-<h1 data-number="10" id="testing"><span class="header-section-number">10</span> Testing</h1>
-<p>The integration tests in <a href="https://github.com/firstpair/phindex/blob/9589cc348f17e1d34693fa81dc3ac0be0f4ee904/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
+<h1 data-number="10" id="feeding-dngc"><span class="header-section-number">10</span> Feeding dngc</h1>
+<p><a href="https://firstpair.org/books/dng-compare/">DNG Compare</a>
+keeps one tree, the left, as a byte-for-byte archive of deltas against
+another, the right, with a searchable metadata section. Its unified
+command, <code>dngc</code>, can take both what to pair and the metadata
+from phindex indexes, so that a tree of a million files is archived
+without reading most of it. This chapter covers only what
+<code>dngc</code> takes from phindex; the archive itself, its layout,
+verification and restore are in DNG Compare’s manual.</p>
+<div class="sourceCode" id="cb23"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="ex">dngc</span> run /Volumes/Archive/2026 /Volumes/Backup/2026 /Volumes/Backup/dngc-2026 <span class="dt">\</span></span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--index</span> archive.sqlite backup.sqlite <span class="at">--metadata</span> phindex</span></code></pre></div>
+<p>The first two arguments are the left and right roots, the third the
+archive, which lies outside both, and <code>--index</code> names the
+phindex indexes of the left and the right tree, in that order. Both
+trees should be indexed by a run that has finished.</p>
+<ul>
+<li><strong>Pairs from <code>align</code>.</strong> Without
+<code>--pairs</code>, <code>dngc run</code> covers the whole left tree.
+Given <code>--index</code>, it runs <code>phindex align</code> on the
+two indexes into a temporary report and takes its pairs from
+<code>files.tsv</code>: every left file with the right file it matched,
+at any tier, unit partners included. A left file with no match is kept
+as a full copy. <code>dngc</code> finds <code>phindex</code> in the
+<code>PHINDEX</code> environment variable, then in a
+<code>phindex</code> checkout beside its own
+(<code>phindex/rust/target/release/phindex</code>), then on the
+<code>PATH</code>.</li>
+<li><strong>The left tree must be fully indexed.</strong> If
+<code>align</code> reports any left file as <code>not-indexed</code>, or
+if a walk of the left tree finds a file that is in no line of
+<code>files.tsv</code> and whose name does not begin with a dot,
+<code>dngc</code> stops and asks you to index the left tree first. An
+unread right row is not an error, but a left file whose counterpart is
+unread has no match, so it is kept as a full copy; index the right tree
+completely too.</li>
+<li><strong>Dot names are kept, not dropped.</strong> <code>align</code>
+leaves out names beginning with a dot. They may still be unique (an
+editor’s hidden file is still someone’s file), so <code>dngc</code>
+lists them from its own walk and keeps them as full copies. Its walk
+skips only <code>.DS_Store</code> and symbolic links.</li>
+<li><strong>A row counts only while it is current.</strong> Wherever
+<code>dngc</code> uses an index row, it uses it only when the path is in
+<code>files</code>, not gone, with a SHA-256, and the row’s size and
+mtime equal the file’s as it stats it now. Anything else is treated as
+having no row: the file is read.</li>
+<li><strong>Identical pairs are settled without reading.</strong> When a
+pair’s left and right rows are current and have the same SHA-256, the
+comparison is settled as equal and the preservation needs no delta. Such
+pairs are recorded first, in bulk, as reference records (the left file
+is the right file’s bytes), written 5,000 to a transaction, before the
+worker pool takes the rest. No byte of either file is read.</li>
+<li><strong><code>--metadata phindex</code>.</strong> Without it,
+<code>dngc</code> compares metadata by running Perl ExifTool on the
+files. With it, no ExifTool runs: the archive’s metadata section is
+built from the metadata records phindex stored for both sides of each
+pair. Those are exiftool-rs records, stamped
+<code>ExifTool:DngCompareEngine</code>, and a string value over 1 KiB,
+such as an embedded thumbnail or a camera-profile table, is there as
+<code>long-sha256:&lt;hex&gt;:&lt;length&gt;</code>, so the section
+shows that such a value differs but not its content; the bytes
+themselves are in the preserved files. A pair whose rows are not
+current, or that has no record, is written with the reason and not
+compared. An archive whose metadata came from Perl ExifTool is refused,
+since records of different engines are never mixed.
+<code>--metadata phindex</code> requires <code>--index</code>.</li>
+</ul>
+<p><code>dngc</code> reads the indexes itself with
+<code>immutable=1</code>, and the <code>align</code> it runs opens them
+with a plain read-only open (see <em>Copying an index</em>). Run it only
+while no indexer writes either index, and with the indexes in a writable
+folder or switched out of WAL mode. With <code>--pairs FILE</code>,
+<code>dngc</code> takes <code>LEFT&lt;TAB&gt;RIGHT</code> lines from the
+file instead of running <code>align</code>; <code>dng-pairs.tsv</code>
+and <code>image-pairs.tsv</code> are such files, and
+<code>partner-pairs.tsv</code>, with its kind column, is not.</p>
+<h1 data-number="11" id="testing"><span class="header-section-number">11</span> Testing</h1>
+<p>The integration tests in <a href="https://github.com/firstpair/phindex/blob/ee4e59c896a12daf94c0723bde43efde5de11738/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
 run the phindex binary on disposable synthetic trees in a temporary
 directory, with two workers:</p>
 <ul>
@@ -1732,16 +2038,16 @@ file, the SHA-256 is present, the DNG identities are absent, the
 metadata digest is present, the refused grammar leaves a reason in
 <code>dngsem_err</code>, and one metadata record is stored.</li>
 </ul>
-<p>The test in <a href="https://github.com/firstpair/phindex/blob/9589cc348f17e1d34693fa81dc3ac0be0f4ee904/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>
+<p>The test in <a href="https://github.com/firstpair/phindex/blob/ee4e59c896a12daf94c0723bde43efde5de11738/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>
 is the worked example of the previous chapter: it checks every unit’s
-kind, status, flags and target, the tiers of <code>IMG_2</code>, the
-three image pairs and the right-only units.</p>
-<div class="sourceCode" id="cb18"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> rust <span class="kw">&amp;&amp;</span> <span class="ex">cargo</span> test <span class="at">--release</span></span></code></pre></div>
+kind, status, flags and target, the tiers of <code>IMG_2</code>, the two
+image pairs, the one partner pair and the right-only units.</p>
+<div class="sourceCode" id="cb24"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> rust <span class="kw">&amp;&amp;</span> <span class="ex">cargo</span> test <span class="at">--release</span></span></code></pre></div>
 <p>The equivalence of phindex and phindex-ox rests on comparing their
 databases on the same tree, as in the comparison above. Synthetic tests
 check the indexing logic; they do not survey real camera files, and they
 do not qualify the identities, which phidentify’s manual covers.</p>
-<h1 data-number="11" id="licences"><span class="header-section-number">11</span> Licences</h1>
+<h1 data-number="12" id="licences"><span class="header-section-number">12</span> Licences</h1>
 <p>The phindex source is MIT. The binaries link third-party code under
 other licences, through phidentify:</p>
 <ul>
@@ -1753,7 +2059,7 @@ metadata record, through dng-compare’s FFI crate.</li>
 <p>Built phindex and phindex-ox binaries are therefore covered by the
 GPL. phindex only reads the indexed tree; it writes only its SQLite
 file.</p>
-<h1 data-number="12" id="reference"><span class="header-section-number">12</span> Reference</h1>
+<h1 data-number="13" id="reference"><span class="header-section-number">13</span> Reference</h1>
 <table>
 <colgroup>
 <col style="width: 50%" />
@@ -1768,7 +2074,7 @@ file.</p>
 <tbody>
 <tr>
 <td>Version</td>
-<td>0.2.0</td>
+<td>0.3.0</td>
 </tr>
 <tr>
 <td>Revision stamp</td>
@@ -1839,6 +2145,29 @@ writer, mimalloc</td>
 <code>identical</code>, <code>xmp-only</code>,
 <code>dng-metadata</code>, <code>image-metadata</code>,
 <code>lightroom</code>, <code>unit-partner</code></td>
+</tr>
+<tr>
+<td><code>align</code> report</td>
+<td><code>summary.json</code> (also on stdout), <code>units.tsv</code>,
+<code>files.tsv</code>, <code>right-only.tsv</code>,
+<code>dng-pairs.tsv</code>, <code>image-pairs.tsv</code>,
+<code>partner-pairs.tsv</code></td>
+</tr>
+<tr>
+<td><code>align</code> progress</td>
+<td>stderr: each stage with counts and seconds, a line every 5 s within
+a stage; names beginning with a dot left out</td>
+</tr>
+<tr>
+<td>Runner</td>
+<td><code>scripts/phindex-run.sh [--ox] [--log FILE] --db INDEX --root DIR [options]</code>:
+this checkout’s build, <code>caffeinate -i</code>, appended log, one
+writer per index</td>
+</tr>
+<tr>
+<td>Index copies</td>
+<td>read closed indexes with <code>immutable=1</code>, or copy and set
+<code>PRAGMA journal_mode=DELETE</code> on the copy</td>
 </tr>
 <tr>
 <td>OCaml</td>

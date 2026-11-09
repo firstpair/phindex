@@ -5,7 +5,7 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
-  <meta name="dcterms.date" content="2026-11-02" />
+  <meta name="dcterms.date" content="2026-11-09" />
   <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
   <title>What phindex is</title>
   <style>
@@ -309,47 +309,46 @@ are printed) and counted in the run’s errors. It is read again on the
 next run.</p>
 <h2 data-number="2.4" id="where-it-fits"><span
 class="header-section-number">2.4</span> Where it fits</h2>
-<p>phindex is the part of the photo-archive work that remembers. The
-other parts compute, compare and transfer:</p>
+<p>This book is one of nine on the FirstPair photo tools. Each owns one
+part, and <a href="https://firstpair.org/books/photostack/">The
+FirstPair Photo Stack</a> shows how they fit together.</p>
 <ul>
 <li><strong><a
-href="https://github.com/firstpair/phidentify">phidentify</a></strong>
-computes the identities, as a Rust library with a C ABI and an OCaml
-package that builds under stock OCaml and under OxCaml. phindex never
-reimplements an identity; it calls phidentify and stores what comes
-back. phidentify’s manual is on the <a
-href="https://firstpair.org/books/phidentify/">First Pair
-shelf</a>.</li>
+href="https://firstpair.org/books/tiffgraph/">tiffgraph</a></strong>
+walks a TIFF or DNG file’s structure under a fixed grammar and finds its
+editable XMP packet.</li>
 <li><strong><a
-href="https://github.com/firstpair/tiffgraph">tiffgraph</a></strong> is
-a bounded TIFF/DNG graph walker, in OCaml (stock OCaml and OxCaml) and
-in Rust. Under a fixed grammar it locates a DNG’s editable XMP packet
-and refuses anything outside the grammar with a reason. The
-<code>dngsem_profile</code> and <code>preserved</code> columns come from
-its walk: the Rust crate inside phidentify’s Rust core for
-<code>phindex</code>, the OCaml library inside phidentify’s OCaml
-package for <code>phindex-ox</code>. Its manual is on the <a
-href="https://firstpair.org/books/tiffgraph/">First Pair shelf</a>.</li>
+href="https://firstpair.org/books/phidentify/">phidentify</a></strong>
+computes a photo’s identities: SHA-256, DNG raw blocks, image data,
+Lightroom fingerprint, metadata record and preserved digest.</li>
 <li><strong><a
-href="https://github.com/querygraph/semantic-unison">Semantic
-Unison</a></strong> is a fork of the Unison file synchronizer that sends
-DNG metadata edits without resending image bytes. Its peers negotiate
-which tiffgraph grammar they trust, and it defines the
-<code>SDE/0-preserved</code> digest that proves a metadata transfer left
-every other byte alone. The <code>preserved</code> column is that
-digest, so an index built by phindex speaks the same identity as Unison.
-Its manual is on the <a
-href="https://firstpair.org/books/semantic-unison/">First Pair
-shelf</a>.</li>
+href="https://firstpair.org/books/phindex/">phindex</a></strong> keeps
+those identities for every file of a volume, and aligns two volumes by
+content.</li>
+<li><strong><a href="https://firstpair.org/books/dng-compare/">DNG
+Compare</a></strong> compares pairs and preserves one side byte for byte
+as deltas against the other, with a searchable metadata section, through
+<code>dngc</code>.</li>
 <li><strong><a
-href="https://github.com/firstpair/dng-compare">dng-compare</a></strong>
-compares DNG archives: it pairs files across trees, compares raw
-samples, decodes when encodings differ, and keeps metadata archives.
-phidentify’s raw-block identity is dng-compare’s block comparison turned
-into a digest, and its metadata identity uses dng-compare’s exiftool-rs
-engine. Its manual is on the <a
-href="https://firstpair.org/books/dng-compare/">First Pair
-shelf</a>.</li>
+href="https://firstpair.org/books/semantic-unison/">Semantic
+Unison</a></strong> synchronizes photo trees, sending metadata edits
+without resending image bytes, and preserves what a shuttle disk brings
+into the same archives.</li>
+<li><strong><a
+href="https://firstpair.org/books/packdir/">packdir</a></strong> keeps
+directories of small files as SQLite archives that still work like plain
+files.</li>
+<li><strong><a
+href="https://firstpair.org/books/tursolite/">Tursolite</a></strong> is
+the SQLite and Turso layer under packdir, DNG Compare and Mechanic.</li>
+<li><strong><a
+href="https://firstpair.org/books/diskproxy/">diskproxy</a></strong>
+serves a folder as a virtual disk, such as previews with camera metadata
+spliced in, and captures ratings into sidecars.</li>
+<li><strong><a
+href="https://firstpair.org/books/lightroom-repair/">Lightroom
+Repair</a></strong> repairs Lightroom Classic catalogs, previews and
+Sync without forging their state.</li>
 </ul>
 <h2 data-number="2.5" id="what-it-is-not"><span
 class="header-section-number">2.5</span> What it is not</h2>

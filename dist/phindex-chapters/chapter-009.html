@@ -5,7 +5,7 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
-  <meta name="dcterms.date" content="2026-11-02" />
+  <meta name="dcterms.date" content="2026-11-09" />
   <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
   <title>Queries</title>
   <style>
@@ -194,22 +194,87 @@ file with <code>lr_err</code> set gets no answer from the index, not a
 “no”: the fingerprint is defined only for the supported strata. Join
 <code>AgLibraryFileDigest</code> to the catalog’s other tables to see
 which catalog entry each digest belongs to.</p>
-<h2 data-number="8.5" id="housekeeping"><span
-class="header-section-number">8.5</span> Housekeeping</h2>
-<div class="sourceCode" id="cb5"><pre
-class="sourceCode sql"><code class="sourceCode sql"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- why identities failed, most common first</span></span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> lr_err, <span class="fu">count</span>(<span class="op">*</span>) <span class="kw">FROM</span> files <span class="kw">WHERE</span> lr_err <span class="kw">IS</span> <span class="kw">NOT</span> <span class="kw">NULL</span> <span class="kw">AND</span> gone <span class="op">=</span> <span class="dv">0</span></span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="kw">GROUP</span> <span class="kw">BY</span> lr_err <span class="kw">ORDER</span> <span class="kw">BY</span> <span class="dv">2</span> <span class="kw">DESC</span>;</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="co">-- files still to read (never identified, failed, or from an older revision)</span></span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> <span class="fu">count</span>(<span class="op">*</span>) <span class="kw">FROM</span> files <span class="kw">WHERE</span> gone <span class="op">=</span> <span class="dv">0</span></span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>  <span class="kw">AND</span> (sha256 <span class="kw">IS</span> <span class="kw">NULL</span> <span class="kw">OR</span> ids_rev <span class="kw">IS</span> <span class="kw">NOT</span></span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>       <span class="st">&#39;phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1&#39;</span>);</span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="co">-- the last runs</span></span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> root, datetime(started_unix, <span class="st">&#39;unixepoch&#39;</span>) <span class="kw">AS</span> started,</span>
-<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>       finished_unix <span class="op">-</span> started_unix <span class="kw">AS</span> secs,</span>
-<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>       walked, hashed, bytes_hashed, gone, errors</span>
-<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a><span class="kw">FROM</span> runs <span class="kw">ORDER</span> <span class="kw">BY</span> started_unix <span class="kw">DESC</span> <span class="kw">LIMIT</span> <span class="dv">10</span>;</span></code></pre></div>
+<h2 data-number="8.5" id="copying-an-index"><span
+class="header-section-number">8.5</span> Copying an index</h2>
+<p>An index is in WAL mode, which is what lets queries run while the
+indexer writes. WAL mode is recorded in the database file itself, so a
+closed index, and every plain copy of one, is still a WAL database, and
+that changes what a read-only open does with it:</p>
+<ul>
+<li><strong>A plain read-only open writes beside the file.</strong>
+Opened with SQLite’s <code>mode=ro</code> and nothing else, a WAL
+database needs its <code>-shm</code> (shared-memory index) and
+<code>-wal</code> files. Where they are missing, current SQLite creates
+them beside the database, read-only open or not, and they stay after the
+connection closes. A backup volume that should hold one file per index
+then holds three, and a volume mounted read-only cannot take them at
+all, so the open fails.</li>
+<li><strong>macOS’s own SQLite refuses instead.</strong> The
+<code>sqlite3</code> that ships with macOS fails to open a WAL database
+read-only when its <code>-shm</code> file is missing, with
+<code>unable to open database file</code>, even in a writable
+folder.</li>
+</ul>
+<p>Both were checked on a synthetic WAL database: SQLite 3.54 created
+<code>-wal</code> and <code>-shm</code> on a <code>mode=ro</code> open,
+macOS’s <code>sqlite3</code> 3.43.2 refused it, and both failed in a
+read-only folder.</p>
+<p><code>phindex align</code> opens its indexes with such a plain
+read-only open, through the SQLite built into phindex. On a WAL-mode
+index it creates <code>-wal</code> and <code>-shm</code> beside the
+file, and in a read-only folder it fails with
+<code>attempt to write a readonly database</code>; both were seen on
+synthetic indexes. Give it indexes in a writable folder, or copies
+switched out of WAL mode as below.</p>
+<p>There are two ways around it.</p>
+<p><strong>Read a closed index with <code>immutable=1</code>.</strong>
+<code>immutable=1</code> tells SQLite that the file cannot change, so it
+takes no locks and needs no <code>-shm</code> or <code>-wal</code>. Use
+it only while no indexer is writing that index: an immutable reader does
+not see a writer’s changes and can read a half-updated file. DNG
+Compare’s <code>dngc</code> opens phindex indexes this way.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">sqlite3</span> <span class="st">&#39;file:/Volumes/Backup/index/archive.sqlite?immutable=1&#39;</span> <span class="dt">\</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  <span class="st">&#39;SELECT count(*) FROM files&#39;</span></span></code></pre></div>
+<p><strong>Copy it, then take the copy out of WAL mode.</strong> Copy
+the closed index with <code>cp</code> to a writable place, switch the
+copy’s journal mode, and then move it where it should live:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cp</span> ~/indexes/archive.sqlite /tmp/archive.sqlite                 <span class="co"># no indexer running</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="ex">sqlite3</span> /tmp/archive.sqlite <span class="st">&#39;PRAGMA journal_mode=DELETE&#39;</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="fu">rm</span> <span class="at">-f</span> /tmp/archive.sqlite-shm /tmp/archive.sqlite-wal           <span class="co"># if any were left</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="fu">mv</span> /tmp/archive.sqlite /Volumes/Backup/index/archive.sqlite</span></code></pre></div>
+<p>The copy is then an ordinary rollback-journal database: a
+<code>mode=ro</code> open reads it without creating anything, also on a
+read-only volume. The <code>rm</code> is there because macOS’s
+<code>sqlite3</code> leaves a <code>-shm</code> file behind after the
+switch; a database out of WAL mode does not use it, and once no
+connection is open it can go. Copy only an index no indexer is writing;
+a copy taken during a run can miss what is still in the
+<code>-wal</code> file. To continue indexing into such a copy, just run
+the indexer on it: it switches the file back to WAL mode when it opens
+it.</p>
+<p>Keep a short README beside index copies on a volume, so that whoever
+finds them later does not open them the way that writes beside them:</p>
+<pre class="text"><code>These are phindex indexes (SQLite), copied here with journal_mode=DELETE.
+Read them with a read-only open (mode=ro) or with immutable=1.
+A copy still in WAL mode must be read with immutable=1, or copied and
+switched with PRAGMA journal_mode=DELETE first; a plain read-only open
+creates -wal and -shm files beside it, and macOS&#39;s sqlite3 refuses it.</code></pre>
+<h2 data-number="8.6" id="housekeeping"><span
+class="header-section-number">8.6</span> Housekeeping</h2>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode sql"><code class="sourceCode sql"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- why identities failed, most common first</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> lr_err, <span class="fu">count</span>(<span class="op">*</span>) <span class="kw">FROM</span> files <span class="kw">WHERE</span> lr_err <span class="kw">IS</span> <span class="kw">NOT</span> <span class="kw">NULL</span> <span class="kw">AND</span> gone <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="kw">GROUP</span> <span class="kw">BY</span> lr_err <span class="kw">ORDER</span> <span class="kw">BY</span> <span class="dv">2</span> <span class="kw">DESC</span>;</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="co">-- files still to read (never identified, failed, or from an older revision)</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> <span class="fu">count</span>(<span class="op">*</span>) <span class="kw">FROM</span> files <span class="kw">WHERE</span> gone <span class="op">=</span> <span class="dv">0</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>  <span class="kw">AND</span> (sha256 <span class="kw">IS</span> <span class="kw">NULL</span> <span class="kw">OR</span> ids_rev <span class="kw">IS</span> <span class="kw">NOT</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>       <span class="st">&#39;phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1&#39;</span>);</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a><span class="co">-- the last runs</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a><span class="kw">SELECT</span> root, datetime(started_unix, <span class="st">&#39;unixepoch&#39;</span>) <span class="kw">AS</span> started,</span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>       finished_unix <span class="op">-</span> started_unix <span class="kw">AS</span> secs,</span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a>       walked, hashed, bytes_hashed, gone, errors</span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a><span class="kw">FROM</span> runs <span class="kw">ORDER</span> <span class="kw">BY</span> started_unix <span class="kw">DESC</span> <span class="kw">LIMIT</span> <span class="dv">10</span>;</span></code></pre></div>
 </body>
 </html>

@@ -127,7 +127,7 @@ for the reason.</p>
 <tr>
 <td><code>md_digest</code>, <code>md_err</code></td>
 <td>exiftool-rs metadata record, file location left out</td>
-<td>every file</td>
+<td>files whose extension the engine reads</td>
 <td>same metadata record from the same engine</td>
 </tr>
 <tr>
@@ -179,7 +179,13 @@ error, never a guess.</li>
 record that dng-compare’s exiftool-rs engine writes, without the members
 that say where the file sits (its name, directory and file dates). The
 engine’s own version stamp stays in the hash, so records from different
-engines never compare equal.</li>
+engines never compare equal. Only files whose extension the engine reads
+are attempted; any other file, such as a Capture One <code>.cop</code>
+cache proxy or an <code>.ini</code>, keeps both <code>md_digest</code>
+and <code>md_err</code> empty and has no record. An index written before
+that rule is corrected at the start of the next update: those rows lose
+their digest, error and record, without a read and without a new
+revision stamp.</li>
 <li><strong><code>dngsem_profile</code></strong> names the strictest of
 the grammars <code>dng-xmp/0</code>, <code>dng-xmp/1</code> and
 <code>dng-xmp/2</code> under which tiffgraph found the primary XMP

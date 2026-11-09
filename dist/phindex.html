@@ -313,7 +313,7 @@ for the reason.</p>
 <tr>
 <td><code>md_digest</code>, <code>md_err</code></td>
 <td>exiftool-rs metadata record, file location left out</td>
-<td>every file</td>
+<td>files whose extension the engine reads</td>
 <td>same metadata record from the same engine</td>
 </tr>
 <tr>
@@ -365,7 +365,13 @@ error, never a guess.</li>
 record that dng-compare’s exiftool-rs engine writes, without the members
 that say where the file sits (its name, directory and file dates). The
 engine’s own version stamp stays in the hash, so records from different
-engines never compare equal.</li>
+engines never compare equal. Only files whose extension the engine reads
+are attempted; any other file, such as a Capture One <code>.cop</code>
+cache proxy or an <code>.ini</code>, keeps both <code>md_digest</code>
+and <code>md_err</code> empty and has no record. An index written before
+that rule is corrected at the start of the next update: those rows lose
+their digest, error and record, without a read and without a new
+revision stamp.</li>
 <li><strong><code>dngsem_profile</code></strong> names the strictest of
 the grammars <code>dng-xmp/0</code>, <code>dng-xmp/1</code> and
 <code>dng-xmp/2</code> under which tiffgraph found the primary XMP
@@ -1827,7 +1833,7 @@ nothing to compare, and so are sidecars, whose differences the metadata
 records already show. To compare and also preserve a whole tree in one
 command, use <code>dngc</code>, as the next chapter describes.</p>
 <h2 data-number="9.8" id="a-worked-example"><span class="header-section-number">9.8</span> A worked example</h2>
-<p>The integration test for <code>align</code>, in <a href="https://github.com/firstpair/phindex/blob/ee4e59c896a12daf94c0723bde43efde5de11738/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>,
+<p>The integration test for <code>align</code>, in <a href="https://github.com/firstpair/phindex/blob/9306d1a14c2604d4550f55ff6e55dd69b16cf5aa/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>,
 builds two small synthetic trees of minimal RW2 and JPEG files and
 indexes both. The left folder <code>s1</code> holds five raw+JPEG units,
 <code>IMG_1</code> to <code>IMG_5</code>, a lone <code>IMG_6.JPG</code>,
@@ -2006,7 +2012,7 @@ file instead of running <code>align</code>; <code>dng-pairs.tsv</code>
 and <code>image-pairs.tsv</code> are such files, and
 <code>partner-pairs.tsv</code>, with its kind column, is not.</p>
 <h1 data-number="11" id="testing"><span class="header-section-number">11</span> Testing</h1>
-<p>The integration tests in <a href="https://github.com/firstpair/phindex/blob/ee4e59c896a12daf94c0723bde43efde5de11738/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
+<p>The integration tests in <a href="https://github.com/firstpair/phindex/blob/9306d1a14c2604d4550f55ff6e55dd69b16cf5aa/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
 run the phindex binary on disposable synthetic trees in a temporary
 directory, with two workers:</p>
 <ul>
@@ -2038,7 +2044,7 @@ file, the SHA-256 is present, the DNG identities are absent, the
 metadata digest is present, the refused grammar leaves a reason in
 <code>dngsem_err</code>, and one metadata record is stored.</li>
 </ul>
-<p>The test in <a href="https://github.com/firstpair/phindex/blob/ee4e59c896a12daf94c0723bde43efde5de11738/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>
+<p>The test in <a href="https://github.com/firstpair/phindex/blob/9306d1a14c2604d4550f55ff6e55dd69b16cf5aa/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>
 is the worked example of the previous chapter: it checks every unit’s
 kind, status, flags and target, the tiers of <code>IMG_2</code>, the two
 image pairs, the one partner pair and the right-only units.</p>

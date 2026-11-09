@@ -2,9 +2,11 @@
 
 This manual is by Alexy Khrabrov, with Claude as co-author. The ideas and decisions are Alexy's; Claude wrote the text and the code with him.
 
-It describes phindex 0.2.0 as of 2026-11-02: the Rust binary `phindex` and its OCaml counterpart `phindex-ox`, which runs under stock OCaml 5 and under OxCaml. phindex is licensed under the MIT License; the binaries link code under other licences, as the chapter on licences explains. Its source is at [github.com/firstpair/phindex](https://github.com/firstpair/phindex).
+It describes phindex 0.3.0 as of 2026-11-08: the Rust binary `phindex` and its OCaml counterpart `phindex-ox`, which runs under stock OCaml 5 and under OxCaml. phindex is licensed under the MIT License; the binaries link code under other licences, as the chapter on licences explains. Its source is at [github.com/firstpair/phindex](https://github.com/firstpair/phindex).
 
-Every example in this manual uses synthetic files or generic paths such as `/archive` and `/backup`. Nothing here depends on a particular photo library, disk or catalog.
+0.3.0 changes no identity. The indexers and the revision stamp are those of 0.2.0, so an index 0.2.0 wrote is continued without reading anything again. What is new: `align` writes the image files it matched only as unit partners to their own list, `partner-pairs.tsv`, and reports its progress on stderr; `dngc`, DNG Compare's unified command, takes its pairs and metadata from phindex indexes; and a runner script starts long runs. New sections also cover copying an index between volumes and a throughput limit set by the enclosure rather than the disks.
+
+Every example in this manual uses synthetic files or generic paths such as `/archive`, `/backup`, `/Volumes/Archive` and `/Volumes/Backup`. Nothing here depends on a particular photo library, disk or catalog.
 
 # What phindex is
 
@@ -75,12 +77,18 @@ A file whose identification failed as a whole, because it could not be read or b
 
 ## Where it fits
 
-phindex is the part of the photo-archive work that remembers. The other parts compute, compare and transfer:
+This book is one of nine on the FirstPair photo tools. Each owns one part, and
+[The FirstPair Photo Stack](https://firstpair.org/books/photostack/) shows how they fit together.
 
-- **[phidentify](https://github.com/firstpair/phidentify)** computes the identities, as a Rust library with a C ABI and an OCaml package that builds under stock OCaml and under OxCaml. phindex never reimplements an identity; it calls phidentify and stores what comes back. phidentify's manual is on the [First Pair shelf](https://firstpair.org/books/phidentify/).
-- **[tiffgraph](https://github.com/firstpair/tiffgraph)** is a bounded TIFF/DNG graph walker, in OCaml (stock OCaml and OxCaml) and in Rust. Under a fixed grammar it locates a DNG's editable XMP packet and refuses anything outside the grammar with a reason. The `dngsem_profile` and `preserved` columns come from its walk: the Rust crate inside phidentify's Rust core for `phindex`, the OCaml library inside phidentify's OCaml package for `phindex-ox`. Its manual is on the [First Pair shelf](https://firstpair.org/books/tiffgraph/).
-- **[Semantic Unison](https://github.com/querygraph/semantic-unison)** is a fork of the Unison file synchronizer that sends DNG metadata edits without resending image bytes. Its peers negotiate which tiffgraph grammar they trust, and it defines the `SDE/0-preserved` digest that proves a metadata transfer left every other byte alone. The `preserved` column is that digest, so an index built by phindex speaks the same identity as Unison. Its manual is on the [First Pair shelf](https://firstpair.org/books/semantic-unison/).
-- **[dng-compare](https://github.com/firstpair/dng-compare)** compares DNG archives: it pairs files across trees, compares raw samples, decodes when encodings differ, and keeps metadata archives. phidentify's raw-block identity is dng-compare's block comparison turned into a digest, and its metadata identity uses dng-compare's exiftool-rs engine. Its manual is on the [First Pair shelf](https://firstpair.org/books/dng-compare/).
+- **[tiffgraph](https://firstpair.org/books/tiffgraph/)** walks a TIFF or DNG file's structure under a fixed grammar and finds its editable XMP packet.
+- **[phidentify](https://firstpair.org/books/phidentify/)** computes a photo's identities: SHA-256, DNG raw blocks, image data, Lightroom fingerprint, metadata record and preserved digest.
+- **[phindex](https://firstpair.org/books/phindex/)** keeps those identities for every file of a volume, and aligns two volumes by content.
+- **[DNG Compare](https://firstpair.org/books/dng-compare/)** compares pairs and preserves one side byte for byte as deltas against the other, with a searchable metadata section, through `dngc`.
+- **[Semantic Unison](https://firstpair.org/books/semantic-unison/)** synchronizes photo trees, sending metadata edits without resending image bytes, and preserves what a shuttle disk brings into the same archives.
+- **[packdir](https://firstpair.org/books/packdir/)** keeps directories of small files as SQLite archives that still work like plain files.
+- **[Tursolite](https://firstpair.org/books/tursolite/)** is the SQLite and Turso layer under packdir, DNG Compare and Mechanic.
+- **[diskproxy](https://firstpair.org/books/diskproxy/)** serves a folder as a virtual disk, such as previews with camera metadata spliced in, and captures ratings into sidecars.
+- **[Lightroom Repair](https://firstpair.org/books/lightroom-repair/)** repairs Lightroom Classic catalogs, previews and Sync without forging their state.
 
 ## What it is not
 
@@ -177,6 +185,29 @@ phindex-ox 2f2c4580ffbf542a1bb4edba4ce1b9327a575ff6 built Mon 2026-11-02 13:52:4
 ```
 
 A long indexing run outlives many edits to the source, and the log of a run that took three days should say which code wrote the rows. In phindex, `rust/build.rs` runs `git rev-parse HEAD` and `git diff --quiet HEAD` at build time and passes the result and the build time to the compiler as environment variables, which the binary prints with `env!`; it asks Cargo to rebuild when `.git/HEAD`, `.git/index`, `src` or `Cargo.toml` change, so a commit or an edit refreshes the header. In phindex-ox, a dune rule with `(deps (universe))` runs the same two git commands on every build and writes them into a generated module, `build_info.ml`, which the program prints. A source tree without git prints `unknown` for the commit. The `-dirty` mark says the binary may not match any commit; for runs whose rows matter, build from a committed tree.
+
+## The runner script
+
+A first run of a large tree takes days, and it is easy to start one from the wrong build, let the machine sleep under it, lose its output with the terminal, or start a second run on the same index by mistake. `scripts/phindex-run.sh` takes care of those four things and nothing else:
+
+```sh
+scripts/phindex-run.sh --db /Volumes/Backup/index/archive.sqlite \
+  --root /Volumes/Archive --log /Volumes/Backup/index/archive.log --workers 8
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--db FILE`, `--root DIR` | required, as for the indexer |
+| `--ox` | run phindex-ox instead of phindex |
+| `--log FILE` | append the run's output, stdout and stderr together, to this file as well as showing it |
+| anything else | passed to the indexer unchanged: `--only`, `--workers`, `--full-stat`, `--progress-secs`, `--batch` |
+
+- **This checkout's build.** The script runs `rust/target/release/phindex` from the checkout it lives in, or with `--ox` `ocaml/_build/default/phindex_ox.exe`. It does not build. If the binary is missing it stops and prints the command that builds it (`cargo build --release` in `rust/`, or `dune build` in `ocaml/`). Rebuild after pulling; the launch header then names the commit.
+- **Awake.** Where `caffeinate` exists, as on macOS, the indexer runs under `caffeinate -i`, so the machine does not sleep from idleness while the run lasts. A closed lid or a sleep chosen from the menu still puts it to sleep, and the run waits with it.
+- **The log.** With `--log`, output goes through `tee -a`, so the file grows by one section per run, each beginning with its launch header. Without `--log`, the output goes to the terminal only.
+- **One writer.** The index path is made absolute, and the script refuses to start, listing the processes, when a `phindex` or `phindex_ox.exe` process is running whose command line has `--db` followed by that same absolute path. Every run the script starts passes its path that way, so two runs through the script never share an index. A run started by hand with a relative path, or from a binary named otherwise, is not recognised; do not mix the two on one index.
+
+**Stopping and resuming.** Ctrl-C stops the run: the interrupt reaches the indexer, `caffeinate` and `tee` alike, and the script exits. The indexer has nothing to clean up. What it committed stays, at most the last uncommitted results (fewer than 500) are lost, and the run leaves no row in `runs`. To resume, run the same command again. Its quick walk takes the unread files' rows from the index, sees them incomplete and reads them; nothing committed is read again (see *Commits, interruptions and resuming*). With `--log`, the last lines before the interrupt may be missing from the log, since `tee` stops too.
 
 # The schema
 
@@ -412,6 +443,14 @@ Once the disks limit, more workers stop helping and can hurt: every worker reads
 
 The progress line's MB/s is the indexer's own view of the same thing.
 
+## When the enclosure limits
+
+Sometimes neither the CPU nor the disks set the limit, but the box the disks are in. A multi-disk enclosure has a bridge between its disks and the cable, and the bridge has a ceiling of its own, which need not be the cable's.
+
+This is a measurement on one enclosure, not a rule: a RAID enclosure connected over Thunderbolt, whose internal bridge is a USB 10 Gb/s one, read at about 240 MB/s, and that figure did not move with more workers or with a larger read size. More workers did not help. Other enclosures will have other ceilings, and a USB 10 Gb/s link is not in itself limited to that rate; the cap belongs to that bridge.
+
+The sign is a read rate that stays flat whatever you change on the computer's side: more workers, fewer workers, larger reads. To confirm it, copy one large file off the enclosure with `cp` or `dd` while nothing else reads from it; if a plain sequential copy reaches about the same rate as the indexer, the indexer already gets everything the enclosure gives. Then use the fewest workers that hold the rate, since on hard disks the extra workers only add seeks. The system's view of the connection, such as macOS's System Information listing the enclosure under USB rather than Thunderbolt, may show which bridge is inside.
+
 ## Reading in path order
 
 Which files the workers read at the same moment matters as much as how many workers there are. In 0.1.0 the Rust pool took the list of files with rayon's `into_par_iter`, which splits a list into contiguous ranges and gives each thread its own range. With 16 workers that meant 16 readers in 16 distant parts of the tree, typically 16 different folders years apart, all at once. Each worker's file was contiguous on disk, but the disks served the 16 readers in turn, and every switch between them was a long seek.
@@ -496,6 +535,47 @@ WHERE f.gone = 0;
 
 Opening the copy with `immutable=1` keeps SQLite from creating journal files beside it; the `file:` form needs URI filenames, which the `sqlite3` shell accepts. An equal fingerprint and size means Lightroom Classic's matcher would accept the file as that original. It does not mean equal bytes or equal pixels. A file with `lr_err` set gets no answer from the index, not a "no": the fingerprint is defined only for the supported strata. Join `AgLibraryFileDigest` to the catalog's other tables to see which catalog entry each digest belongs to.
 
+## Copying an index
+
+An index is in WAL mode, which is what lets queries run while the indexer writes. WAL mode is recorded in the database file itself, so a closed index, and every plain copy of one, is still a WAL database, and that changes what a read-only open does with it:
+
+- **A plain read-only open writes beside the file.** Opened with SQLite's `mode=ro` and nothing else, a WAL database needs its `-shm` (shared-memory index) and `-wal` files. Where they are missing, current SQLite creates them beside the database, read-only open or not, and they stay after the connection closes. A backup volume that should hold one file per index then holds three, and a volume mounted read-only cannot take them at all, so the open fails.
+- **macOS's own SQLite refuses instead.** The `sqlite3` that ships with macOS fails to open a WAL database read-only when its `-shm` file is missing, with `unable to open database file`, even in a writable folder.
+
+Both were checked on a synthetic WAL database: SQLite 3.54 created `-wal` and `-shm` on a `mode=ro` open, macOS's `sqlite3` 3.43.2 refused it, and both failed in a read-only folder.
+
+`phindex align` opens its indexes with such a plain read-only open, through the SQLite built into phindex. On a WAL-mode index it creates `-wal` and `-shm` beside the file, and in a read-only folder it fails with `attempt to write a readonly database`; both were seen on synthetic indexes. Give it indexes in a writable folder, or copies switched out of WAL mode as below.
+
+There are two ways around it.
+
+**Read a closed index with `immutable=1`.** `immutable=1` tells SQLite that the file cannot change, so it takes no locks and needs no `-shm` or `-wal`. Use it only while no indexer is writing that index: an immutable reader does not see a writer's changes and can read a half-updated file. DNG Compare's `dngc` opens phindex indexes this way.
+
+```sh
+sqlite3 'file:/Volumes/Backup/index/archive.sqlite?immutable=1' \
+  'SELECT count(*) FROM files'
+```
+
+**Copy it, then take the copy out of WAL mode.** Copy the closed index with `cp` to a writable place, switch the copy's journal mode, and then move it where it should live:
+
+```sh
+cp ~/indexes/archive.sqlite /tmp/archive.sqlite                 # no indexer running
+sqlite3 /tmp/archive.sqlite 'PRAGMA journal_mode=DELETE'
+rm -f /tmp/archive.sqlite-shm /tmp/archive.sqlite-wal           # if any were left
+mv /tmp/archive.sqlite /Volumes/Backup/index/archive.sqlite
+```
+
+The copy is then an ordinary rollback-journal database: a `mode=ro` open reads it without creating anything, also on a read-only volume. The `rm` is there because macOS's `sqlite3` leaves a `-shm` file behind after the switch; a database out of WAL mode does not use it, and once no connection is open it can go. Copy only an index no indexer is writing; a copy taken during a run can miss what is still in the `-wal` file. To continue indexing into such a copy, just run the indexer on it: it switches the file back to WAL mode when it opens it.
+
+Keep a short README beside index copies on a volume, so that whoever finds them later does not open them the way that writes beside them:
+
+```text
+These are phindex indexes (SQLite), copied here with journal_mode=DELETE.
+Read them with a read-only open (mode=ro) or with immutable=1.
+A copy still in WAL mode must be read with immutable=1, or copied and
+switched with PRAGMA journal_mode=DELETE first; a plain read-only open
+creates -wal and -shm files beside it, and macOS's sqlite3 refuses it.
+```
+
 ## Housekeeping
 
 ```sql
@@ -524,7 +604,7 @@ phindex align --left old.sqlite --left-root /old/foto \
   --right new.sqlite --right-root /new/foto --out report
 ```
 
-The two roots must be indexed first; they may be in two index files or in the same one. `align` opens the indexes read-only and never reads a photo. It considers the rows under each root that are not gone, and skips names beginning with a dot, such as `.DS_Store` and AppleDouble files. On a real trial, a left tree of 1.7 million files was aligned with a right tree of 1.6 million in 24 seconds, using 1.6 GB of memory.
+The two roots must be indexed first; they may be in two index files or in the same one. `align` opens the indexes read-only and never reads a photo. It considers the rows under each root that are not gone, and leaves out, on both sides, every file whose name begins with a dot, such as `.DS_Store`, AppleDouble `._` files and the hidden files editors and copying tools leave behind. Only the file's own name counts: a file inside a folder whose name begins with a dot is aligned like any other. A left-out file appears nowhere in the report, not even as unmatched, so a tool that walks the tree itself finds files `align` did not account for; `dngc`, below, keeps them as full copies. On a real trial, a left tree of 1.7 million files was aligned with a right tree of 1.6 million in 24 seconds, using 1.6 GB of memory.
 
 ## Units
 
@@ -585,11 +665,32 @@ A right unit to which no left file was matched is listed as right-only, with its
 | --- | --- |
 | `summary.json` | file and unit counts per side, left units by kind and status, flag counts, left files by tier, right-only units by kind, copies, and unread counts; also printed to stdout |
 | `units.tsv` | one line per left unit: unit, kind, status, flags, right unit, and each member's extension with its tier |
-| `files.tsv` | one line per left file: left path, right path, tier, and the number of candidates; relative to the roots |
+| `files.tsv` | a header line, then one line per left file: left path, right path, tier, and the number of candidates; relative to the roots. A file with no match has an empty right path and the tier `unmatched`, or `not-indexed` when its row is unread |
 | `right-only.tsv` | one line per right-only unit: unit, kind, content |
 | `dng-pairs.tsv` | absolute `LEFT<TAB>RIGHT` paths of DNGs matched by a shared identity whose bytes differ |
 | `image-pairs.tsv` | the same for matched raws, JPEGs and other images |
 | `partner-pairs.tsv` | `KIND<TAB>LEFT<TAB>RIGHT` for image files matched only as unit partners: no shared identity, so not for a pixel comparison |
+
+The two pairs files hold only pairs that share an identity. An image file matched only as a unit partner, with nothing in common with its right file but its place in the photo, goes to `partner-pairs.tsv` instead, with its kind (`dng`, `raw`, `jpeg` or `image`) first. A pixel or raw comparison of such a pair can only confirm that the two differ, or fail outright when the right file is damaged, as with a black, undecodable copy saved under a suffixed name beside a good original. These pairs are for review: open them side by side, or decide from `units.tsv` what the unit is. Their three columns also keep them from being passed by mistake where `LEFT<TAB>RIGHT` lines are expected. Identical files, sidecars and other files that are not images appear in none of the three.
+
+## Progress
+
+`align` reads both indexes into memory, indexes the right side's identities, matches and writes the report. On archives of more than a million files that takes a minute or two, and so `align` reports on stderr as it goes. Each stage is named when it starts, with its counts, and ends with the seconds since it began; within a long stage, a line comes every 5 seconds:
+
+```text
+align: reading old.sqlite under /old/foto ...
+  412,000 files read (5s)
+  1,700,212 files in 812,409 units (21s)
+align: reading new.sqlite under /new/foto ...
+  1,612,934 files in 790,118 units (19s)
+align: indexing the right side's identities ...
+align: matching 812,409 left units ...
+  matched (3s)
+align: writing report ...
+  written (2s)
+```
+
+The numbers are illustrative; the 5-second lines appear only in a stage that lasts that long. Before these lines, `align` prints the launch header described under *Building and running*. Standard output carries only the JSON summary, the same as `summary.json`, so a caller can read it from stdout while the progress goes to the terminal or a log.
 
 ## From alignment to raw comparison
 
@@ -600,7 +701,7 @@ uv run python compare_dng.py /old/foto /new/foto \
   --pairs report/dng-pairs.tsv --pairs-only --output reports/aligned-dngs
 ```
 
-Identical files are left out of the pairs files, since there is nothing to compare, and so are sidecars, whose differences the metadata records already show.
+Identical files are left out of the pairs files, since there is nothing to compare, and so are sidecars, whose differences the metadata records already show. To compare and also preserve a whole tree in one command, use `dngc`, as the next chapter describes.
 
 ## A worked example
 
@@ -627,6 +728,26 @@ The integration test for `align`, in [`rust/tests/align.rs`](../rust/tests/align
 
 Both members of `IMG_2` matched as `image-metadata`. `IMG_4`'s JPEG had two identical candidates, the one beside `X_4.RW2` and the copy in `dup`; it chose the one in the target unit, and the unit is flagged `duplicates`. `IMG_5`'s JPEG shares no identity and matched as the unit partner of the raw, so the unit's image differs. `image-pairs.tsv` lists `IMG_2`'s two files for a closer look; `IMG_5`'s JPEG, which shares no identity, is in `partner-pairs.tsv` instead. `right-only.tsv` lists `s1/IMG_9` as `new` and `dup/IMG_4` as a `copy` of left content; `other/IMG_3` is not right-only, since `IMG_3`'s JPEG matched there.
 
+# Feeding dngc
+
+[DNG Compare](https://firstpair.org/books/dng-compare/) keeps one tree, the left, as a byte-for-byte archive of deltas against another, the right, with a searchable metadata section. Its unified command, `dngc`, can take both what to pair and the metadata from phindex indexes, so that a tree of a million files is archived without reading most of it. This chapter covers only what `dngc` takes from phindex; the archive itself, its layout, verification and restore are in DNG Compare's manual.
+
+```sh
+dngc run /Volumes/Archive/2026 /Volumes/Backup/2026 /Volumes/Backup/dngc-2026 \
+  --index archive.sqlite backup.sqlite --metadata phindex
+```
+
+The first two arguments are the left and right roots, the third the archive, which lies outside both, and `--index` names the phindex indexes of the left and the right tree, in that order. Both trees should be indexed by a run that has finished.
+
+- **Pairs from `align`.** Without `--pairs`, `dngc run` covers the whole left tree. Given `--index`, it runs `phindex align` on the two indexes into a temporary report and takes its pairs from `files.tsv`: every left file with the right file it matched, at any tier, unit partners included. A left file with no match is kept as a full copy. `dngc` finds `phindex` in the `PHINDEX` environment variable, then in a `phindex` checkout beside its own (`phindex/rust/target/release/phindex`), then on the `PATH`.
+- **The left tree must be fully indexed.** If `align` reports any left file as `not-indexed`, or if a walk of the left tree finds a file that is in no line of `files.tsv` and whose name does not begin with a dot, `dngc` stops and asks you to index the left tree first. An unread right row is not an error, but a left file whose counterpart is unread has no match, so it is kept as a full copy; index the right tree completely too.
+- **Dot names are kept, not dropped.** `align` leaves out names beginning with a dot. They may still be unique (an editor's hidden file is still someone's file), so `dngc` lists them from its own walk and keeps them as full copies. Its walk skips only `.DS_Store` and symbolic links.
+- **A row counts only while it is current.** Wherever `dngc` uses an index row, it uses it only when the path is in `files`, not gone, with a SHA-256, and the row's size and mtime equal the file's as it stats it now. Anything else is treated as having no row: the file is read.
+- **Identical pairs are settled without reading.** When a pair's left and right rows are current and have the same SHA-256, the comparison is settled as equal and the preservation needs no delta. Such pairs are recorded first, in bulk, as reference records (the left file is the right file's bytes), written 5,000 to a transaction, before the worker pool takes the rest. No byte of either file is read.
+- **`--metadata phindex`.** Without it, `dngc` compares metadata by running Perl ExifTool on the files. With it, no ExifTool runs: the archive's metadata section is built from the metadata records phindex stored for both sides of each pair. Those are exiftool-rs records, stamped `ExifTool:DngCompareEngine`, and a string value over 1 KiB, such as an embedded thumbnail or a camera-profile table, is there as `long-sha256:<hex>:<length>`, so the section shows that such a value differs but not its content; the bytes themselves are in the preserved files. A pair whose rows are not current, or that has no record, is written with the reason and not compared. An archive whose metadata came from Perl ExifTool is refused, since records of different engines are never mixed. `--metadata phindex` requires `--index`.
+
+`dngc` reads the indexes itself with `immutable=1`, and the `align` it runs opens them with a plain read-only open (see *Copying an index*). Run it only while no indexer writes either index, and with the indexes in a writable folder or switched out of WAL mode. With `--pairs FILE`, `dngc` takes `LEFT<TAB>RIGHT` lines from the file instead of running `align`; `dng-pairs.tsv` and `image-pairs.tsv` are such files, and `partner-pairs.tsv`, with its kind column, is not.
+
 # Testing
 
 The integration tests in [`rust/tests/incremental.rs`](../rust/tests/incremental.rs) run the phindex binary on disposable synthetic trees in a temporary directory, with two workers:
@@ -637,7 +758,7 @@ The integration tests in [`rust/tests/incremental.rs`](../rust/tests/incremental
 - **The upgrade reads only image candidates.** Rows are set back to the previous revision, one is marked as a DNG and one is given the reason an older build wrote for files over 1 GiB. The next run reads only the JPEG again; the DNG row gets the DNG reason, the text file `not a TIFF-family file or JPEG` and its tiffgraph walk redone, every row the new stamp, and a further run reads nothing.
 - **Identities are recorded separately.** For a text file, the SHA-256 is present, the DNG identities are absent, the metadata digest is present, the refused grammar leaves a reason in `dngsem_err`, and one metadata record is stored.
 
-The test in [`rust/tests/align.rs`](../rust/tests/align.rs) is the worked example of the previous chapter: it checks every unit's kind, status, flags and target, the tiers of `IMG_2`, the three image pairs and the right-only units.
+The test in [`rust/tests/align.rs`](../rust/tests/align.rs) is the worked example of the previous chapter: it checks every unit's kind, status, flags and target, the tiers of `IMG_2`, the two image pairs, the one partner pair and the right-only units.
 
 ```sh
 cd rust && cargo test --release
@@ -658,7 +779,7 @@ Built phindex and phindex-ox binaries are therefore covered by the GPL. phindex 
 
 | Item | Value |
 | --- | --- |
-| Version | 0.2.0 |
+| Version | 0.3.0 |
 | Revision stamp | `phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1` |
 | Upgraded without a full read | rows of the stamp without `; image-data/1` |
 | Metadata engine label | `exiftool-rs (via phidentify)` |
@@ -674,6 +795,10 @@ Built phindex and phindex-ox binaries are therefore covered by the GPL. phindex 
 | Record compression | raw deflate, no zlib header |
 | Rust | 1.99.0, edition 2024; rayon pool fed in path order, one SQLite writer, mimalloc |
 | `align` | units by folder and name up to the first dot; tiers `identical`, `xmp-only`, `dng-metadata`, `image-metadata`, `lightroom`, `unit-partner` |
+| `align` report | `summary.json` (also on stdout), `units.tsv`, `files.tsv`, `right-only.tsv`, `dng-pairs.tsv`, `image-pairs.tsv`, `partner-pairs.tsv` |
+| `align` progress | stderr: each stage with counts and seconds, a line every 5 s within a stage; names beginning with a dot left out |
+| Runner | `scripts/phindex-run.sh [--ox] [--log FILE] --db INDEX --root DIR [options]`: this checkout's build, `caffeinate -i`, appended log, one writer per index |
+| Index copies | read closed indexes with `immutable=1`, or copy and set `PRAGMA journal_mode=DELETE` on the copy |
 | OCaml | 5.1 or later: stock OCaml (`Domain.spawn`) or OxCaml (`Domain.Safe.spawn`) |
 | Source | [github.com/firstpair/phindex](https://github.com/firstpair/phindex) |
 | Related projects | [phidentify](https://github.com/firstpair/phidentify), [tiffgraph](https://github.com/firstpair/tiffgraph), [Semantic Unison](https://github.com/querygraph/semantic-unison), [dng-compare](https://github.com/firstpair/dng-compare) |

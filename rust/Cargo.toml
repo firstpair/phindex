@@ -16,7 +16,7 @@ serde_json = "1.0.151"
 anyhow = "1.0"
 flate2 = "1.1"
 mimalloc = "0.1"
-phidentify = { git = "https://github.com/firstpair/phidentify", rev = "84033f81c191c2bb01d0a01133ec66457207fffa", features = ["lightroom", "metadata", "semantic"] }
+phidentify = { git = "https://github.com/firstpair/phidentify", rev = "cbcb57776738de10309f44368a970a3752dc1478", features = ["lightroom", "metadata", "semantic"] }
 rayon = "1.12"
 rusqlite = { version = "0.41", features = ["bundled"] }
 

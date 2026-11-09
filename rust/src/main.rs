@@ -209,6 +209,38 @@ fn deflate(text: &str) -> Result<Vec<u8>> {
     Ok(e.finish()?)
 }
 
+/// The metadata identity applies only to files whose extension the engine reads
+/// (`phidentify::metadata::reads`). Rows written before that rule, for other
+/// types (a Capture One `.cop` cache proxy, `.ini`), lose their metadata digest,
+/// error and record, as if never attempted; nothing is read again, and the
+/// revision stamp stays, since no identity of a file the rule covers changes.
+fn clear_unread_metadata(db: &mut Connection, lo: &str, hi: &str) -> Result<usize> {
+    let paths: Vec<String> = {
+        let mut st = db.prepare("SELECT path FROM files WHERE path >= ?1 AND path < ?2
+                                 AND (md_digest IS NOT NULL OR md_err IS NOT NULL)")?;
+        let rows = st.query_map(params![lo, hi], |r| r.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for p in rows {
+            let p = p?;
+            if !phidentify::metadata::reads(Path::new(&p)) {
+                out.push(p);
+            }
+        }
+        out
+    };
+    let tx = db.transaction()?;
+    {
+        let mut clear = tx.prepare("UPDATE files SET md_digest=NULL, md_err=NULL WHERE path=?1")?;
+        let mut record = tx.prepare("DELETE FROM metadata WHERE path=?1")?;
+        for p in &paths {
+            clear.execute(params![p])?;
+            record.execute(params![p])?;
+        }
+    }
+    tx.commit()?;
+    Ok(paths.len())
+}
+
 fn update(db_path: &str, root: &str, only: Option<&str>, full_stat: bool, workers: usize, progress: Duration) -> Result<()> {
     let rev = REVISION;
     let root = fs::canonicalize(root).with_context(|| format!("root {root}"))?.to_str().context("non-UTF-8 root")?.to_owned();
@@ -233,6 +265,10 @@ fn update(db_path: &str, root: &str, only: Option<&str>, full_stat: bool, worker
                                    params![phidentify::image_data::DNG, rev, PREVIOUS_REVISION, lo, hi])?;
     if upgraded_dngs > 0 {
         eprintln!("upgrade: {upgraded_dngs} DNG rows given image_data without a read");
+    }
+    let cleared = clear_unread_metadata(&mut db, &lo, &hi)?;
+    if cleared > 0 {
+        eprintln!("upgrade: {cleared} rows of file types the engine does not read: metadata cleared, not attempted");
     }
     let mut known: HashMap<String, Known> = HashMap::new();
     let mut upgradable: HashSet<String> = HashSet::new();

@@ -165,6 +165,27 @@ let progress_line ~t0 ~n ~todo ~bytes ~total ~errors ~counts:(b, l, m, s, i, u) 
     (100. *. Int64.to_float bytes /. Float.max 1. (Int64.to_float total)) (rate /. 1e6) errors
     (int_of_float eta / 3600) (int_of_float eta mod 3600 / 60) b l m s i u
 
+(* The metadata identity applies only to files whose extension the engine
+   reads (Phidentify.reads_metadata). Rows written before that rule, for other
+   types (a Capture One .cop cache proxy, .ini), lose their metadata digest,
+   error and record, as if never attempted; nothing is read again, and the
+   revision stamp stays. Same as the Rust clear_unread_metadata. *)
+let clear_unread_metadata db lo hi =
+  let paths = ref [] in
+  with_stmt db "SELECT path FROM files WHERE path >= ?1 AND path < ?2 AND (md_digest IS NOT NULL OR md_err IS NOT NULL)"
+    (fun st ->
+      List.iteri (fun i v -> check db (Sqlite3.bind st (i + 1) v)) [ D.TEXT lo; D.TEXT hi ];
+      while Sqlite3.step st = Sqlite3.Rc.ROW do
+        let p = Sqlite3.column_text st 0 in
+        if not (Phidentify.reads_metadata p) then paths := p :: !paths
+      done);
+  exec db "BEGIN";
+  with_stmt db "UPDATE files SET md_digest=NULL, md_err=NULL WHERE path=?1" (fun clear ->
+    with_stmt db "DELETE FROM metadata WHERE path=?1" (fun record ->
+      List.iter (fun p -> run_stmt db clear [ D.TEXT p ]; run_stmt db record [ D.TEXT p ]) !paths));
+  exec db "COMMIT";
+  List.length !paths
+
 let update ~db_path ~root ~only ~full_stat ~workers ~progress ~batch =
   check_features ();
   let rev = revision in
@@ -186,6 +207,9 @@ let update ~db_path ~root ~only ~full_stat ~workers ~progress ~batch =
       run_stmt db st [ D.TEXT Phidentify.image_data_dng; D.TEXT rev; D.TEXT previous_revision; D.TEXT lo; D.TEXT hi ];
       Sqlite3.changes db) in
   if upgraded_dngs > 0 then Printf.eprintf "upgrade: %d DNG rows given image_data without a read\n%!" upgraded_dngs;
+  let cleared = clear_unread_metadata db lo hi in
+  if cleared > 0 then
+    Printf.eprintf "upgrade: %d rows of file types the engine does not read: metadata cleared, not attempted\n%!" cleared;
   let known = Hashtbl.create 500_000 and was_gone = Hashtbl.create 1024 in
   let upgradable = Hashtbl.create 1024 in
   let files_by_dir = Hashtbl.create 50_000 in

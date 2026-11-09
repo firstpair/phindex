@@ -126,7 +126,7 @@ fn identities_are_recorded_separately() {
         (col("sha256").unwrap(), col("dng_blocks"), col("lr_digest"), col("md_digest"), col("dngsem_err"), col("preserved"));
     assert_eq!(sha.len(), 64);
     assert!(blocks.is_none() && lr.is_none() && pres.is_none(), "no DNG identity for a text file");
-    assert!(md.is_some(), "metadata applies to any file");
+    assert!(md.is_some(), "the engine reads .txt files");
     assert!(prof_err.is_some(), "the refused DNG grammar leaves a reason, not a value");
     let n: i64 = c.query_row("SELECT count(*) FROM metadata", [], |r| r.get(0)).unwrap();
     assert_eq!(n, 1);
@@ -176,4 +176,40 @@ fn previous_revision_rows_are_upgraded_reading_only_image_candidates() {
         }
     }
     assert_eq!(run(&db, &root, &[]).0, 0, "nothing left to upgrade");
+}
+
+/// Metadata is attempted only for extensions the engine reads: a Capture One
+/// `.cop` cache proxy and an `.ini` get neither digest nor error nor record. An
+/// index written before that rule loses those rows' metadata at the next
+/// update, without reading anything again.
+#[test]
+fn metadata_only_for_extensions_the_engine_reads() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = fs::canonicalize(tmp.path()).unwrap().join("tree");
+    let db = tmp.path().join("index.sqlite");
+    write(&root.join("note.txt"), "a text file");
+    write(&root.join("Cache/a.DNG.cop"), "a cache proxy");
+    write(&root.join("settings.ini"), "[x]\ny=1\n");
+    assert_eq!(run(&db, &root, &[]).0, 3);
+    let md = |c: &Connection| -> Vec<(String, bool, bool, bool)> {
+        c.prepare("SELECT path, md_digest IS NOT NULL, md_err IS NOT NULL, path IN (SELECT path FROM metadata)
+                   FROM files ORDER BY path").unwrap()
+            .query_map([], |r| Ok((r.get::<_, String>(0)?.rsplit('/').next().unwrap().to_string(), r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap().collect::<rusqlite::Result<_>>().unwrap()
+    };
+    let want = vec![("a.DNG.cop".to_string(), false, false, false), ("note.txt".to_string(), true, false, true),
+                    ("settings.ini".to_string(), false, false, false)];
+    let c = Connection::open(&db).unwrap();
+    assert_eq!(md(&c), want);
+    // As an older build left them: an error for one, a record for the other.
+    c.execute("UPDATE files SET md_err='metadata extraction failed: \"unsupported file type: ini\"' WHERE path LIKE '%.ini'", []).unwrap();
+    c.execute("UPDATE files SET md_digest='ab' WHERE path LIKE '%.cop'", []).unwrap();
+    let (path, rec): (String, Vec<u8>) =
+        c.query_row("SELECT path, record_deflate FROM metadata", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    let cop: String = c.query_row("SELECT path FROM files WHERE path LIKE '%.cop'", [], |r| r.get(0)).unwrap();
+    c.execute("INSERT OR REPLACE INTO metadata VALUES (?1, 'exiftool-rs (via phidentify)', ?2)", rusqlite::params![cop, rec]).unwrap();
+    assert_ne!(path, cop);
+    drop(c);
+    assert_eq!(run(&db, &root, &[]).0, 0, "nothing is read again");
+    assert_eq!(md(&Connection::open(&db).unwrap()), want);
 }

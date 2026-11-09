@@ -27,7 +27,7 @@ Every identity has its own column in the `files` table, and every identity that 
 | `sha256` | whole-file SHA-256 | every file | every byte is equal |
 | `dng_blocks`, `dng_blocks_err` | DNG encoded raw blocks | files with a TIFF header | same encoded primary raw data; metadata may differ |
 | `lr_digest`, `lr_err` | Lightroom Classic original fingerprint | files that parse as DNGs | Lightroom Classic's matcher would pair them |
-| `md_digest`, `md_err` | exiftool-rs metadata record, file location left out | every file | same metadata record from the same engine |
+| `md_digest`, `md_err` | exiftool-rs metadata record, file location left out | files whose extension the engine reads | same metadata record from the same engine |
 | `dngsem_profile`, `dngsem_err` | strictest tiffgraph grammar that accepts the file | every file | the same grammar applies |
 | `preserved`, `preserved_err` | Semantic Unison's `SDE/0-preserved` digest | files a grammar accepted | every byte outside the XMP packet is equal, at the same size and layout |
 | `image_data`, `image_err` | stored image bytes of a camera raw, TIFF or JPEG that is not a DNG | every file | same image bytes in the same order; metadata may differ |
@@ -38,7 +38,7 @@ phidentify's manual defines each identity exactly: what goes into it, what equal
 - **`sha256`** is the only identity that proves two files are the same bytes. Files over 1 GiB get a streamed SHA-256, their metadata record and the tiffgraph walk from disk, and nothing that needs the bytes in memory.
 - **`dng_blocks`** hashes the encoded raw image data of a DNG and its encoding tags, without offsets, XMP, previews or maker notes. A keyword edit cannot change it; a flipped raw byte always does.
 - **`lr_digest`** is phidentify's reimplementation of the fingerprint Lightroom Classic keeps for every original, in upper-case hex as Classic stores it. It is computed only for the DNG strata phidentify supports; for anything else it is an error, never a guess.
-- **`md_digest`** hashes the ExifTool-shaped record that dng-compare's exiftool-rs engine writes, without the members that say where the file sits (its name, directory and file dates). The engine's own version stamp stays in the hash, so records from different engines never compare equal.
+- **`md_digest`** hashes the ExifTool-shaped record that dng-compare's exiftool-rs engine writes, without the members that say where the file sits (its name, directory and file dates). The engine's own version stamp stays in the hash, so records from different engines never compare equal. Only files whose extension the engine reads are attempted; any other file, such as a Capture One `.cop` cache proxy or an `.ini`, keeps both `md_digest` and `md_err` empty and has no record. An index written before that rule is corrected at the start of the next update: those rows lose their digest, error and record, without a read and without a new revision stamp.
 - **`dngsem_profile`** names the strictest of the grammars `dng-xmp/0`, `dng-xmp/1` and `dng-xmp/2` under which tiffgraph found the primary XMP packet and checked that nothing else the file declares lies inside it.
 - **`preserved`** hashes every byte outside that packet, with the file size and the packet's position bound in. Two files with equal `preserved` values under the same `dngsem_profile` can differ only inside the packet.
 - **`image_data`** hashes only the stored image bytes of a file that is not a DNG, as the next section explains.

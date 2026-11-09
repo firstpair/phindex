@@ -293,7 +293,7 @@ dependencies = [
 [[package]]
 name = "dng-exiftool-ffi"
 version = "0.1.0"
-source = "git+https://github.com/firstpair/dng-compare?rev=f68627f2a88eb5bbbd642fb7cad605e3dfa05cec#f68627f2a88eb5bbbd642fb7cad605e3dfa05cec"
+source = "git+https://github.com/firstpair/dng-compare?rev=e6f310154607451b14845f119acd106dc026d101#e6f310154607451b14845f119acd106dc026d101"
 dependencies = [
  "exiftool-rs",
  "serde_json",
@@ -1035,8 +1035,8 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "phidentify"
-version = "0.1.0"
-source = "git+https://github.com/firstpair/phidentify?rev=84033f81c191c2bb01d0a01133ec66457207fffa#84033f81c191c2bb01d0a01133ec66457207fffa"
+version = "0.2.0"
+source = "git+https://github.com/firstpair/phidentify?rev=cbcb57776738de10309f44368a970a3752dc1478#cbcb57776738de10309f44368a970a3752dc1478"
 dependencies = [
  "anyhow",
  "dng-exiftool-ffi",

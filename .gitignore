@@ -1,5 +1,5 @@
 rust/target/
-ocaml/_build/
+ocaml/_build*/
 *.install
 .DS_Store
 *.sqlite

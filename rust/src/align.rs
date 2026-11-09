@@ -42,6 +42,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::Path;
+use std::time::Instant;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 enum Kind {
@@ -120,6 +121,37 @@ fn unit_key(rel: &str) -> (String, String) {
     (dir.to_string(), stem.to_string())
 }
 
+/// A progress line on stderr every few seconds, so stdout stays the JSON summary.
+struct Progress { start: Instant, last: Instant }
+
+impl Progress {
+    fn new() -> Progress {
+        let now = Instant::now();
+        Progress { start: now, last: now }
+    }
+    fn tick(&mut self, what: impl FnOnce() -> String) {
+        if self.last.elapsed().as_secs_f64() >= 5.0 {
+            self.last = Instant::now();
+            eprintln!("  {} ({:.0}s)", what(), self.start.elapsed().as_secs_f64());
+        }
+    }
+    fn secs(&self) -> f64 {
+        self.start.elapsed().as_secs_f64()
+    }
+}
+
+fn thousands(n: usize) -> String {
+    let s = n.to_string();
+    let mut out = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
 fn load(db: &str, root: &str) -> Result<Side> {
     let root = root.trim_end_matches('/').to_string();
     let c = Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
@@ -128,8 +160,11 @@ fn load(db: &str, root: &str) -> Result<Side> {
     let mut rows = Vec::new();
     let mut unit_ids: HashMap<(String, String), usize> = HashMap::new();
     let mut units: Vec<((String, String), Vec<usize>)> = Vec::new();
+    eprintln!("align: reading {db} under {root} ...");
+    let mut progress = Progress::new();
     let mut q = st.query(params![format!("{root}/"), format!("{root}0")])?;
     while let Some(r) = q.next()? {
+        progress.tick(|| format!("{} files read", thousands(rows.len())));
         let path: String = r.get(0)?;
         let rel = path[root.len() + 1..].to_string();
         let name = rel.rsplit('/').next().unwrap_or(&rel);
@@ -148,6 +183,7 @@ fn load(db: &str, root: &str) -> Result<Side> {
         };
         rows.push(Row { kind: kind_of(name), rel, unit, sha: r.get(1)?, blocks: r.get(2)?, preserved, image: r.get(5)?, lr: r.get(6)? });
     }
+    eprintln!("  {} files in {} units ({:.0}s)", thousands(rows.len()), thousands(units.len()), progress.secs());
     Ok(Side { root, rows, units })
 }
 
@@ -232,6 +268,7 @@ pub fn run(args: &[String]) -> Result<()> {
         bail!("no files under {} in the left index", left.root);
     }
     fs::create_dir_all(&out)?;
+    eprintln!("align: indexing the right side's identities ...");
     let ix = Indexes {
         sha: by(&right.rows, |r| r.sha.as_deref()),
         blocks: by(&right.rows, |r| r.blocks.as_deref()),
@@ -244,7 +281,10 @@ pub fn run(args: &[String]) -> Result<()> {
     let mut matches: Vec<Option<Match>> = (0..left.rows.len()).map(|_| None).collect();
     let mut used_right_units: HashSet<usize> = HashSet::new();
     let mut unit_target: Vec<Option<usize>> = vec![None; left.units.len()];
+    eprintln!("align: matching {} left units ...", thousands(left.units.len()));
+    let mut progress = Progress::new();
     for (u, (_, members)) in left.units.iter().enumerate() {
+        progress.tick(|| format!("{}/{} units matched", thousands(u), thousands(left.units.len())));
         // Images that identify the unit first: DNG, other raw, image, JPEG; then the rest.
         let mut order = members.clone();
         order.sort_by_key(|&i| left.rows[i].kind);
@@ -279,6 +319,9 @@ pub fn run(args: &[String]) -> Result<()> {
         unit_target[u] = target;
     }
 
+    eprintln!("  matched ({:.0}s)", progress.secs());
+    eprintln!("align: writing {out} ...");
+    let mut progress = Progress::new();
     let w = |name: &str| -> Result<BufWriter<fs::File>> { Ok(BufWriter::new(fs::File::create(Path::new(&out).join(name))?)) };
     let (mut units_tsv, mut files_tsv, mut dng_pairs, mut image_pairs, mut right_only) =
         (w("units.tsv")?, w("files.tsv")?, w("dng-pairs.tsv")?, w("image-pairs.tsv")?, w("right-only.tsv")?);
@@ -289,6 +332,7 @@ pub fn run(args: &[String]) -> Result<()> {
     let mut tiers: BTreeMap<&'static str, u64> = BTreeMap::new();
     let mut flags_count: BTreeMap<&'static str, u64> = BTreeMap::new();
     for (u, ((dir, stem), members)) in left.units.iter().enumerate() {
+        progress.tick(|| format!("{}/{} units written", thousands(u), thousands(left.units.len())));
         let kind = unit_kind(&left, members);
         let unindexed = members.iter().any(|&i| left.rows[i].sha.is_none());
         let ms: Vec<Option<&Match>> = members.iter().map(|&i| matches[i].as_ref()).collect();
@@ -403,6 +447,7 @@ pub fn run(args: &[String]) -> Result<()> {
     for f in [&mut units_tsv, &mut files_tsv, &mut dng_pairs, &mut image_pairs, &mut partner_pairs, &mut right_only] {
         f.flush()?;
     }
+    eprintln!("  written ({:.0}s)", progress.secs());
     println!("{}", serde_json::to_string_pretty(&summary)?);
     Ok(())
 }

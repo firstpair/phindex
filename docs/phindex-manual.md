@@ -356,6 +356,22 @@ On a synthetic tree, phindex, phindex-ox under stock OCaml and phindex-ox under 
 
 The upgrade covers only that one previous stamp. A row with any older stamp, such as one written before `image_data`, is read in full.
 
+## Skeletons from a store that already has them
+
+The upgrade above opens every file. When a [DNG Compare](https://firstpair.org/books/dng-compare/) archive already keeps skeletons of the same contents, they can be copied instead, and no file of the tree is opened:
+
+```sh
+phindex import-skeletons --db archive.sqlite --from /Volumes/Backup/dngc/Archive/skeletons/skeletons.sqlite3
+```
+
+For each row at the previous revision whose SHA-256 the store has, this copies the skeleton, computes `block_marks` from its block list, and stamps the row as current. A row says which content it was hashed from, and the skeleton is of that content, so the file is not needed. The result is what an upgrade from the files writes: phidentify cuts files by the archive format's rules and both tools pack skeletons with the same compressor, and a test holds the imported rows equal to the indexer's own, record and bytes.
+
+- **What it leaves.** A row whose content the store does not have stays at the previous revision, and the next ordinary run upgrades it from its file. That is every file the archive never used as a reference, and every file changed since.
+- **What it checks.** Each skeleton's bytes are checked against the SHA-256 in its own record, and its blocks for order, before it is copied. One that fails is reported and not imported.
+- **What it reads and writes.** The store is opened read-only and immutable. Only the index is written. Another index's `skeletons` table serves as a store too, so one index can be filled from another.
+
+Stop any indexer writing the same index first, as for any second writer.
+
 ## The quick walk
 
 A directory's mtime changes whenever an entry is added to it, removed from it or renamed in it. phindex uses that. Every directory it visits is stored in `dirs` with its inode and mtime. On a rerun, for each directory:

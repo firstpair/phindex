@@ -31,6 +31,7 @@
 //! identified row inherits its identities (moves and renames) without a read.
 
 mod align;
+mod import;
 mod restore;
 
 use anyhow::{Context, Result, bail};
@@ -554,6 +555,7 @@ fn main() -> Result<()> {
         Some("align") => return align::run(&args[2..]),
         Some("versions") => return restore::versions(&args[2..]),
         Some("restore") => return restore::run(&args[2..]),
+        Some("import-skeletons") => return import::run(&args[2..]),
         _ => {}
     }
     let get = |flag: &str| args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned();

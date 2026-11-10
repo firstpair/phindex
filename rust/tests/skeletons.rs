@@ -243,3 +243,77 @@ fn previous_revision_rows_are_upgraded_from_their_structures() {
     assert_eq!(run(&db, &root), 1);
     assert_eq!(snapshot(&db), want);
 }
+
+/// `phindex import-skeletons`: rows at the previous revision take their
+/// skeletons and block marks from a store, with the tree gone from disk.
+#[test]
+fn skeletons_are_imported_from_a_store_without_the_files() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = fs::canonicalize(tmp.path()).unwrap().join("tree");
+    let db = tmp.path().join("index.sqlite");
+    put(&root.join("one.dng"), &tiff("<x:xmpmeta>rating 0</x:xmpmeta>", 1));
+    put(&root.join("copy/one-again.dng"), &tiff("<x:xmpmeta>rating 0</x:xmpmeta>", 1));
+    put(&root.join("two.dng"), &tiff("<x:xmpmeta>rating 2</x:xmpmeta>", 9));
+    put(&root.join("one.jpg"), &jpeg("caption"));
+    put(&root.join("note.txt"), b"not an image");
+    put(&root.join("clip.mov"), &vec![5u8; (1 << 20) + 1]);
+    assert_eq!(run(&db, &root), 6);
+    type Row = (String, Option<String>, Option<String>, String, bool);
+    let snapshot = |db: &Path| -> Vec<Row> {
+        let c = Connection::open(db).unwrap();
+        c.prepare("SELECT path, block_marks, block_marks_err, ids_rev, sha256 IN (SELECT sha256 FROM skeletons) FROM files ORDER BY path")
+            .unwrap().query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))).unwrap()
+            .collect::<rusqlite::Result<_>>().unwrap()
+    };
+    let skeletons = |db: &Path| -> Vec<(String, String, Vec<u8>)> {
+        let c = Connection::open(db).unwrap();
+        c.prepare("SELECT sha256, record, skeleton FROM skeletons ORDER BY sha256").unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().collect::<rusqlite::Result<_>>().unwrap()
+    };
+    let (want, kept) = (snapshot(&db), skeletons(&db));
+    assert_eq!(kept.len(), 4, "three image contents and the small text file");
+    // A store as a DNGC archive has it: the same rows, each record also naming
+    // the path and identity the skeleton was read from. It lacks two.dng's.
+    let store = tmp.path().join("skeletons.sqlite3");
+    let two: String = Connection::open(&db).unwrap()
+        .query_row("SELECT sha256 FROM files WHERE path LIKE '%two.dng'", [], |r| r.get(0)).unwrap();
+    {
+        let c = Connection::open(&store).unwrap();
+        c.execute_batch("CREATE TABLE skeletons(sha256 TEXT PRIMARY KEY, record TEXT NOT NULL, skeleton BLOB NOT NULL)").unwrap();
+        for (sha, record, packed) in kept.iter().filter(|k| k.0 != two) {
+            let archive = record.replacen("\"blocks\":", "\"path\": \"/reference/elsewhere\", \"identity\": [1, 2, 3, 4], \"blocks\":", 1);
+            assert_ne!(&archive, record);
+            c.execute("INSERT INTO skeletons VALUES (?1,?2,?3)", rusqlite::params![sha, archive, packed]).unwrap();
+        }
+    }
+    // The index as the build before block marks left it, and no tree at all.
+    {
+        let c = Connection::open(&db).unwrap();
+        let previous = want[0].3.strip_suffix("; block-marks/1").expect("current revision").to_string();
+        c.execute("UPDATE files SET ids_rev=?1, block_marks=NULL, block_marks_err=NULL", [&previous]).unwrap();
+        c.execute("DELETE FROM skeletons", []).unwrap();
+    }
+    fs::remove_dir_all(&root).unwrap();
+    let out = phindex(&["import-skeletons", "--db", db.to_str().unwrap(), "--from", store.to_str().unwrap()]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "import failed: {err}");
+    assert!(err.contains("done: 4 rows upgraded without opening a file (3 with block marks), 3 skeletons copied; 2 rows left"), "{err}");
+    let got = snapshot(&db);
+    for (g, w) in got.iter().zip(&want) {
+        if g.0.ends_with("two.dng") || g.0.ends_with("clip.mov") {
+            // Not in the store (two.dng), or a content that has no skeleton (the large clip): left for the next run.
+            assert!(g.1.is_none() && g.2.is_none() && g.3 != w.3 && !g.4, "left as it was: {g:?}");
+        } else {
+            assert_eq!(g, w, "the marks, reason and revision a run of the indexer gives");
+        }
+    }
+    let wanted: Vec<_> = kept.iter().filter(|k| k.0 != two).cloned().collect();
+    assert_eq!(skeletons(&db), wanted, "the records and bytes the indexer itself writes");
+    // A second import changes nothing; a store that is not one is refused.
+    let again = phindex(&["import-skeletons", "--db", db.to_str().unwrap(), "--from", store.to_str().unwrap()]);
+    assert!(String::from_utf8_lossy(&again.stderr).contains("done: 0 rows upgraded"), "{}", String::from_utf8_lossy(&again.stderr));
+    assert_eq!(snapshot(&db), got);
+    let empty = tmp.path().join("empty.sqlite3");
+    Connection::open(&empty).unwrap().execute_batch("CREATE TABLE other(x)").unwrap();
+    assert!(!phindex(&["import-skeletons", "--db", db.to_str().unwrap(), "--from", empty.to_str().unwrap()]).status.success());
+}

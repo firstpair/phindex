@@ -23,6 +23,7 @@ into is rebuilt as it was, from the edited file, and checked by SHA-256:
 ```sh
 phindex versions --db archive.sqlite --path /path/to/archive/IMG_0042.dng
 phindex restore  --db archive.sqlite --path /path/to/archive/IMG_0042.dng --out /tmp/IMG_0042-before.dng
+phindex import-skeletons --db archive.sqlite --from ARCHIVE/skeletons/skeletons.sqlite3   # skeletons from a DNGC archive, no file read
 ```
 
 An identity that doesn't apply, or fails, leaves its column NULL and its reason

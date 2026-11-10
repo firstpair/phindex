@@ -160,7 +160,10 @@ let split = function
 let progress_line ~t0 ~n ~todo ~bytes ~total ~errors ~counts:(b, l, m, s, i, u, k, x) =
   let el = Unix.gettimeofday () -. t0 in
   let rate = Int64.to_float bytes /. Float.max el 1e-9 in
-  let eta = if rate > 0. then Int64.to_float (Int64.sub total bytes) /. rate else 0. in
+  (* A run that only upgrades rows reads no bytes: its estimate is by files. *)
+  let eta =
+    if rate > 0. then Int64.to_float (Int64.sub total bytes) /. rate
+    else if n > 0 then float_of_int (max 0 (todo - n)) *. el /. float_of_int n else 0. in
   let e = int_of_float el in
   Printf.eprintf "+%dh%02dm %d/%d files, %.1f/%.1f GB (%.1f%%), %.0f MB/s, %d errors, ETA %dh%02dm; raw blocks %d, Lightroom %d, metadata %d, preserved %d, image data %d, block marks %d, skeletons %d, upgraded unread %d\n%!"
     (e / 3600) (e mod 3600 / 60) n todo (Int64.to_float bytes /. 1e9) (Int64.to_float total /. 1e9)

@@ -526,7 +526,9 @@ fn update(db_path: &str, root: &str, only: Option<&str>, full_stat: bool, worker
             last = Instant::now();
             let secs = t0.elapsed().as_secs_f64().max(1e-9);
             let rate = bytes as f64 / secs;
-            let eta = if rate > 0.0 { (total - bytes).max(0) as f64 / rate } else { 0.0 };
+            // A run that only upgrades rows reads no bytes: its estimate is by files.
+            let eta = if rate > 0.0 { (total - bytes).max(0) as f64 / rate }
+                      else if n > 0 { (n_todo as f64 - n as f64).max(0.0) * secs / n as f64 } else { 0.0 };
             let el = t0.elapsed().as_secs();
             eprintln!("+{}h{:02}m {n}/{n_todo} files, {:.1}/{:.1} GB ({:.1}%), {:.0} MB/s, {errors} errors, ETA {}h{:02}m; \
                        raw blocks {cb}, Lightroom {cl}, metadata {cm}, preserved {cs}, image data {ci}, block marks {cx}, \

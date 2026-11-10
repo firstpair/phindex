@@ -1976,7 +1976,7 @@ nothing to compare, and so are sidecars, whose differences the metadata
 records already show. To compare and also preserve a whole tree in one
 command, use <code>dngc</code>, as the next chapter describes.</p>
 <h2 data-number="9.8" id="a-worked-example"><span class="header-section-number">9.8</span> A worked example</h2>
-<p>The integration test for <code>align</code>, in <a href="https://github.com/firstpair/phindex/blob/012da216701ec884025e7b164038ed9cc9565255/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>,
+<p>The integration test for <code>align</code>, in <a href="https://github.com/firstpair/phindex/blob/635d52f3f7fa5314d4db38f124a1be38a4f4a326/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>,
 builds two small synthetic trees of minimal RW2 and JPEG files and
 indexes both. The left folder <code>s1</code> holds five raw+JPEG units,
 <code>IMG_1</code> to <code>IMG_5</code>, a lone <code>IMG_6.JPG</code>,
@@ -2155,7 +2155,7 @@ file instead of running <code>align</code>; <code>dng-pairs.tsv</code>
 and <code>image-pairs.tsv</code> are such files, and
 <code>partner-pairs.tsv</code>, with its kind column, is not.</p>
 <h1 data-number="11" id="testing"><span class="header-section-number">11</span> Testing</h1>
-<p>The integration tests in <a href="https://github.com/firstpair/phindex/blob/012da216701ec884025e7b164038ed9cc9565255/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
+<p>The integration tests in <a href="https://github.com/firstpair/phindex/blob/635d52f3f7fa5314d4db38f124a1be38a4f4a326/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
 run the phindex binary on disposable synthetic trees in a temporary
 directory, with two workers:</p>
 <ul>
@@ -2181,7 +2181,7 @@ file, the SHA-256 is present, the DNG identities are absent, the
 metadata digest is present, the refused grammar leaves a reason in
 <code>dngsem_err</code>, and one metadata record is stored.</li>
 </ul>
-<p>The tests in <a href="https://github.com/firstpair/phindex/blob/012da216701ec884025e7b164038ed9cc9565255/rust/tests/skeletons.rs"><code>rust/tests/skeletons.rs</code></a>
+<p>The tests in <a href="https://github.com/firstpair/phindex/blob/635d52f3f7fa5314d4db38f124a1be38a4f4a326/rust/tests/skeletons.rs"><code>rust/tests/skeletons.rs</code></a>
 build small TIFFs, JPEGs, a sidecar and a file with no walker:</p>
 <ul>
 <li><strong>Block marks and a skeleton per content.</strong> A DNG-like
@@ -2203,7 +2203,7 @@ the previous stamp, with the skeletons deleted, come back with the same
 block marks, reasons, stamp and skeletons, and the run reads nothing in
 full. A row of an older stamp is read again.</li>
 </ul>
-<p>The test in <a href="https://github.com/firstpair/phindex/blob/012da216701ec884025e7b164038ed9cc9565255/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>
+<p>The test in <a href="https://github.com/firstpair/phindex/blob/635d52f3f7fa5314d4db38f124a1be38a4f4a326/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>
 is the worked example of the previous chapter: it checks every unit’s
 kind, status, flags and target, the tiers of <code>IMG_2</code>, the two
 image pairs, the one partner pair and the right-only units.</p>

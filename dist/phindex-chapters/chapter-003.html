@@ -498,8 +498,11 @@ Sync without forging their state.</li>
 <h2 data-number="2.6" id="what-it-is-not"><span
 class="header-section-number">2.6</span> What it is not</h2>
 <ul>
-<li><strong>Not a writer.</strong> phindex only reads the indexed tree.
-It writes nothing but its SQLite file.</li>
+<li><strong>Not a writer of files.</strong> Indexing, aligning and
+restoring only read the indexed tree and write nothing in it. The one
+command that changes a tree is <code>conform apply</code> (with its
+<code>undo</code>), and it only renames: no file’s content is written,
+replaced or removed.</li>
 <li><strong>Not a synchronizer or a deduplicator.</strong> It tells you
 which files agree on which identity. What to copy, keep or delete is
 your decision, made from queries.</li>

@@ -5,7 +5,7 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
-  <meta name="dcterms.date" content="2026-11-09" />
+  <meta name="dcterms.date" content="2026-11-10" />
   <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
   <title>About this manual</title>
   <style>
@@ -59,21 +59,23 @@ class="header-section-number">1</span> About this manual</h1>
 <p>This manual is by Alexy Khrabrov, with Claude as co-author. The ideas
 and decisions are Alexy’s; Claude wrote the text and the code with
 him.</p>
-<p>It describes phindex 0.3.0 as of 2026-11-08: the Rust binary
+<p>It describes phindex 0.4.0 as of 2026-11-10: the Rust binary
 <code>phindex</code> and its OCaml counterpart <code>phindex-ox</code>,
 which runs under stock OCaml 5 and under OxCaml. phindex is licensed
 under the MIT License; the binaries link code under other licences, as
 the chapter on licences explains. Its source is at <a
 href="https://github.com/firstpair/phindex">github.com/firstpair/phindex</a>.</p>
-<p>0.3.0 changes no identity. The indexers and the revision stamp are
-those of 0.2.0, so an index 0.2.0 wrote is continued without reading
-anything again. What is new: <code>align</code> writes the image files
-it matched only as unit partners to their own list,
-<code>partner-pairs.tsv</code>, and reports its progress on stderr;
-<code>dngc</code>, DNG Compare’s unified command, takes its pairs and
-metadata from phindex indexes; and a runner script starts long runs. New
-sections also cover copying an index between volumes and a throughput
-limit set by the enclosure rather than the disks.</p>
+<p>0.4.0 adds one identity and a way back from metadata edits. Every
+file gets <code>block_marks</code>, phidentify’s identity of a file’s
+large blocks wherever they sit, and the index keeps a
+<strong>skeleton</strong> of every content it reads and the SHA-256 of
+each path’s earlier contents. With those, <code>phindex restore</code>
+rebuilds a file as it was before an editor wrote into it, from the
+edited file. The revision stamp gains <code>; block-marks/1</code>. An
+index written by 0.2.0 or 0.3.0 is upgraded at the next run from each
+file’s structures, without reading any file in full; the earlier
+one-step upgrade, for indexes written before <code>image_data</code>, is
+gone, and such an index is read again in full.</p>
 <p>Every example in this manual uses synthetic files or generic paths
 such as <code>/archive</code>, <code>/backup</code>,
 <code>/Volumes/Archive</code> and <code>/Volumes/Backup</code>. Nothing

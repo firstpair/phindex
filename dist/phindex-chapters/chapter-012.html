@@ -5,7 +5,7 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
-  <meta name="dcterms.date" content="2026-11-09" />
+  <meta name="dcterms.date" content="2026-11-10" />
   <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
   <title>Testing</title>
   <style>
@@ -122,7 +122,7 @@
 <h1 data-number="11" id="testing"><span
 class="header-section-number">11</span> Testing</h1>
 <p>The integration tests in <a
-href="https://github.com/firstpair/phindex/blob/9306d1a14c2604d4550f55ff6e55dd69b16cf5aa/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
+href="https://github.com/firstpair/phindex/blob/012da216701ec884025e7b164038ed9cc9565255/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
 run the phindex binary on disposable synthetic trees in a temporary
 directory, with two workers:</p>
 <ul>
@@ -143,19 +143,36 @@ marked gone.</li>
 <li><strong><code>--only</code> may be repeated.</strong> Two new
 folders given as two <code>--only</code> options are both indexed in one
 run.</li>
-<li><strong>The upgrade reads only image candidates.</strong> Rows are
-set back to the previous revision, one is marked as a DNG and one is
-given the reason an older build wrote for files over 1 GiB. The next run
-reads only the JPEG again; the DNG row gets the DNG reason, the text
-file <code>not a TIFF-family file or JPEG</code> and its tiffgraph walk
-redone, every row the new stamp, and a further run reads nothing.</li>
 <li><strong>Identities are recorded separately.</strong> For a text
 file, the SHA-256 is present, the DNG identities are absent, the
 metadata digest is present, the refused grammar leaves a reason in
 <code>dngsem_err</code>, and one metadata record is stored.</li>
 </ul>
+<p>The tests in <a
+href="https://github.com/firstpair/phindex/blob/012da216701ec884025e7b164038ed9cc9565255/rust/tests/skeletons.rs"><code>rust/tests/skeletons.rs</code></a>
+build small TIFFs, JPEGs, a sidecar and a file with no walker:</p>
+<ul>
+<li><strong>Block marks and a skeleton per content.</strong> A DNG-like
+TIFF and a JPEG get block marks; a sidecar and a large file of another
+format get the reason. Two equal files share one skeleton, the sidecar
+is stored whole, and the large file has none.</li>
+<li><strong>An edited file is restored as it was.</strong> A file is
+rewritten twice with a longer XMP packet. Its block marks stay the same,
+both earlier contents are listed by <code>versions</code>, and
+<code>restore</code> writes each back byte for byte: the latest by path,
+an older one by SHA-256, one found by block marks after the edited file
+moved, and one from a file the index never saw. An existing
+<code>--out</code> is refused.</li>
+<li><strong>A content whose blocks are gone is not restored.</strong>
+After the image data itself is replaced, <code>restore</code> fails,
+names the missing block and leaves nothing behind.</li>
+<li><strong>The upgrade reads no file in full.</strong> Rows set back to
+the previous stamp, with the skeletons deleted, come back with the same
+block marks, reasons, stamp and skeletons, and the run reads nothing in
+full. A row of an older stamp is read again.</li>
+</ul>
 <p>The test in <a
-href="https://github.com/firstpair/phindex/blob/9306d1a14c2604d4550f55ff6e55dd69b16cf5aa/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>
+href="https://github.com/firstpair/phindex/blob/012da216701ec884025e7b164038ed9cc9565255/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>
 is the worked example of the previous chapter: it checks every unit’s
 kind, status, flags and target, the tiers of <code>IMG_2</code>, the two
 image pairs, the one partner pair and the right-only units.</p>

@@ -5,7 +5,7 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
-  <meta name="dcterms.date" content="2026-11-09" />
+  <meta name="dcterms.date" content="2026-11-10" />
   <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
   <title>Building and running</title>
   <style>
@@ -234,9 +234,9 @@ class="header-section-number">3.4</span> What it prints</h2>
 the plan, progress lines, and a summary:</p>
 <pre class="text"><code>phindex 2f2c4580ffbf542a1bb4edba4ce1b9327a575ff6 built Mon 2026-11-02 13:50:12 PST
 walk: 3104 directories, 12 listed, 3092 unchanged and taken from the index, 1 s
-walked 1612934 files under /archive, 412 to read (9.8 GB; 0 of them only to add image_data, by their first bytes unless they can have it), 37 moved or renamed (identities kept), 5 gone, 0 errors, 16 workers (phindex), identities: phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1
-+0h01m 288/412 files, 6.9/9.8 GB (70.4%), 115 MB/s, 0 errors, ETA 0h00m; raw blocks 263, Lightroom 251, metadata 288, preserved 259, image data 21, upgraded unread 0
-done: read 412 files, 9.8 GB, 0 errors (0 stored SHA-256 mismatches); raw blocks 381, Lightroom 362, metadata 412, preserved 376, image data 30; upgraded without a read 0</code></pre>
+walked 1612934 files under /archive, 412 to read (9.8 GB; 0 of them only for block marks and a skeleton, from their structures), 37 moved or renamed (identities kept), 5 gone, 0 errors, 16 workers (phindex), identities: phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1; block-marks/1
++0h01m 288/412 files, 6.9/9.8 GB (70.4%), 115 MB/s, 0 errors, ETA 0h00m; raw blocks 263, Lightroom 251, metadata 288, preserved 259, image data 21, block marks 284, skeletons 288, upgraded unread 0
+done: read 412 files, 9.8 GB, 0 errors (0 stored SHA-256 mismatches); raw blocks 381, Lightroom 362, metadata 412, preserved 376, image data 30, block marks 407, skeletons 412; upgraded without a read 0</code></pre>
 <p>The numbers are illustrative. The launch header is described below.
 The walk line says how many directories were listed and how many were
 taken from the index. The plan line says how many files must be read,
@@ -245,11 +245,9 @@ line counts, for the files read so far, how many got each identity, and
 how many rows of the previous revision were settled without a read. Its
 ETA assumes the remaining bytes go at the rate so far. In phindex the
 writer wakes every second, so progress lines arrive on time; in
-phindex-ox they are checked after each batch. A run that upgrades an
-index from the previous revision prints one more line before the walk,
-<code>upgrade: N DNG rows given image_data without a read</code>, and
-its plan line says how many of the files to read are there only to add
-<code>image_data</code>.</p>
+phindex-ox they are checked after each batch. In a run that upgrades an
+index from the previous revision, the plan line says how many of the
+files are there only for block marks and a skeleton.</p>
 <h2 data-number="3.5" id="the-launch-header"><span
 class="header-section-number">3.5</span> The launch header</h2>
 <p>The first line names the build: the source commit the binary was

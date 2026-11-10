@@ -5,7 +5,7 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
-  <meta name="dcterms.date" content="2026-11-09" />
+  <meta name="dcterms.date" content="2026-11-10" />
   <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
   <title>The schema</title>
   <style>
@@ -121,8 +121,8 @@
 </nav>
 <h1 data-number="4" id="the-schema"><span
 class="header-section-number">4</span> The schema</h1>
-<p>phindex creates four tables and migrates older ones by adding missing
-identity columns. Both indexers create the same schema.</p>
+<p>phindex creates six tables and migrates older ones by adding missing
+identity columns and tables. Both indexers create the same schema.</p>
 <h2 data-number="4.1" id="files"><span
 class="header-section-number">4.1</span> files</h2>
 <p>One row per path ever seen under an indexed root.</p>
@@ -195,14 +195,98 @@ kept</td>
 </table>
 <p>Indexes cover <code>sha256</code>, <code>size</code>,
 <code>dng_blocks</code>, <code>lr_digest</code>, <code>md_digest</code>,
-<code>preserved</code> and <code>image_data</code>, so joins on any
-identity are fast.</p>
+<code>preserved</code>, <code>image_data</code> and
+<code>block_marks</code>, so joins on any identity are fast.</p>
 <p>A row is <strong>complete</strong> when <code>sha256</code> is not
 NULL and <code>ids_rev</code> equals the running indexer’s revision
 stamp. Only complete rows are skipped on a rerun and only complete rows
 can pass their identities to a moved file.</p>
-<h2 data-number="4.2" id="metadata"><span
-class="header-section-number">4.2</span> metadata</h2>
+<h2 data-number="4.2" id="skeletons"><span
+class="header-section-number">4.2</span> skeletons</h2>
+<p>One row per content that has a skeleton, whichever paths held it.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sha256</code></td>
+<td>TEXT, primary key</td>
+<td>the content’s whole-file SHA-256</td>
+</tr>
+<tr>
+<td><code>record</code></td>
+<td>TEXT</td>
+<td>JSON: <code>sha256</code>, <code>size</code>, <code>format</code>
+(<code>tiff</code>, <code>jpeg</code> or <code>whole</code>),
+<code>blocks</code> (<code>[at, len, mark, role]</code> each),
+<code>skeleton_bytes</code>, <code>skeleton_sha256</code>,
+<code>skeleton_format</code> (<code>zstd</code>)</td>
+</tr>
+<tr>
+<td><code>skeleton</code></td>
+<td>BLOB</td>
+<td>every byte outside the blocks, as one zstd frame</td>
+</tr>
+</tbody>
+</table>
+<p>The table has the columns of DNG Compare’s
+<code>skeletons.sqlite3</code>, and the record has that format’s members
+other than the path. Rows are added and never changed or removed.</p>
+<h2 data-number="4.3" id="versions"><span
+class="header-section-number">4.3</span> versions</h2>
+<p>One row per earlier content of a path.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td>TEXT</td>
+<td>the path</td>
+</tr>
+<tr>
+<td><code>sha256</code></td>
+<td>TEXT</td>
+<td>the content it held</td>
+</tr>
+<tr>
+<td><code>size</code>, <code>mtime_ns</code></td>
+<td>INTEGER</td>
+<td>that content’s size and modification time</td>
+</tr>
+<tr>
+<td><code>replaced_unix</code></td>
+<td>INTEGER</td>
+<td>when a run first saw the path with other content</td>
+</tr>
+</tbody>
+</table>
+<p>The primary key is <code>(path, sha256, mtime_ns)</code>. A row is
+written when a run resets a path’s row because its size, mtime or inode
+changed. A path that vanishes gets no row: there is then no file to take
+blocks from.</p>
+<h2 data-number="4.4" id="metadata"><span
+class="header-section-number">4.4</span> metadata</h2>
 <p>One row per identified file that yielded a metadata record.</p>
 <table>
 <thead>
@@ -249,14 +333,14 @@ class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a hr
 <p>The record carries the engine’s stamp,
 <code>ExifTool:DngCompareEngine</code>. Compare records only between
 equal stamps.</p>
-<h2 data-number="4.3" id="dirs"><span
-class="header-section-number">4.3</span> dirs</h2>
+<h2 data-number="4.5" id="dirs"><span
+class="header-section-number">4.5</span> dirs</h2>
 <p>One row per directory ever visited: <code>path</code>,
 <code>ino</code>, <code>mtime_ns</code>, <code>seen_unix</code> and
 <code>gone</code>. The inode and mtime are taken before the directory is
 listed. This table is what makes the quick walk possible.</p>
-<h2 data-number="4.4" id="runs"><span
-class="header-section-number">4.4</span> runs</h2>
+<h2 data-number="4.6" id="runs"><span
+class="header-section-number">4.6</span> runs</h2>
 <p>One row per completed run: <code>root</code>,
 <code>started_unix</code>, <code>finished_unix</code>,
 <code>walked</code> (files in the walked scope), <code>hashed</code>

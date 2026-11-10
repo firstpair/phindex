@@ -5,7 +5,7 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
-  <meta name="dcterms.date" content="2026-11-09" />
+  <meta name="dcterms.date" content="2026-11-10" />
   <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
   <title>Two implementations, one index</title>
   <style>
@@ -132,13 +132,19 @@ phindex-ox took 25 seconds and 3.5 GB.</li>
 runtime asked for them. For 0.2.0 the check was repeated on real folders
 with <code>image_data</code>: phindex and phindex-ox wrote identical
 rows when indexing the folders fresh and when upgrading them from the
-previous revision. The comparison measured totals and did not attribute
-the difference in time and memory. Two structural differences are the
-obvious candidates: phindex streams results from a pool that never
-stops, while phindex-ox spawns domains per batch and waits for each
-batch’s slowest file before the next begins. No stock OCaml timing was
-taken, so the comparison says nothing about stock OCaml’s speed relative
-to OxCaml’s.</p>
+previous revision. For 0.4.0 it was repeated on a synthetic tree of
+TIFFs, JPEGs, text files, a sidecar and a file with no walker, with
+phindex and with phindex-ox under stock OCaml and under OxCaml: the
+three wrote identical <code>files</code>, <code>skeletons</code> and
+<code>versions</code> rows when indexing fresh, after an edit, and when
+each upgraded an index another had written. The stored metadata records
+differ between any two runs, because they hold the file’s access time.
+The comparison measured totals and did not attribute the difference in
+time and memory. Two structural differences are the obvious candidates:
+phindex streams results from a pool that never stops, while phindex-ox
+spawns domains per batch and waits for each batch’s slowest file before
+the next begins. No stock OCaml timing was taken, so the comparison says
+nothing about stock OCaml’s speed relative to OxCaml’s.</p>
 <h2 data-number="6.4" id="files-over-1-gib"><span
 class="header-section-number">6.4</span> Files over 1 GiB</h2>
 <p>phidentify holds a file in memory to identify it only up to 1 GiB. A
@@ -158,15 +164,10 @@ walks a file over the limit from disk with tiffgraph’s
 does, so both indexers record the same <code>dngsem_profile</code> or
 reason. The <code>preserved</code> digest and <code>image_data</code>
 still need the bytes in memory and report the limit in both.</p>
-<p>Rows an older phindex build wrote for such files still carry the old
-reason. The upgrade from the previous revision redoes their walk without
-a full read: a row of the previous revision whose
-<code>dngsem_err</code> is <code>file over the in-memory limit</code>,
-and whose first bytes rule out image data, gets its tiffgraph walk run
-from disk alongside its <code>image_err</code>. A 3 GB AVI, for example,
-is settled by its first 16 bytes and a walk of its header, not by
-reading 3 GB. A candidate over the limit, such as a huge TIFF, is
-identified in full, which includes the walk from disk.</p>
+<p>A file over the limit still gets block marks and a skeleton when it
+is a classic TIFF or a JPEG, because the skeleton is built by positional
+reads and never needs the file in memory. A video over the limit has
+neither.</p>
 <h2 data-number="6.5" id="which-to-use"><span
 class="header-section-number">6.5</span> Which to use</h2>
 <p>For production runs, use <code>phindex</code>. Use

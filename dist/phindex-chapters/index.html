@@ -5,7 +5,7 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
-  <meta name="dcterms.date" content="2026-11-09" />
+  <meta name="dcterms.date" content="2026-11-10" />
   <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
   <title>phindex</title>
   <style>
@@ -56,7 +56,7 @@
 <p class="subtitle">An index of photo identities that is cheap to
 rerun</p>
 <p class="author">Alexy Khrabrov</p>
-<p class="date">2026-11-09</p>
+<p class="date">2026-11-10</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -75,15 +75,20 @@ href="chapter-003.html#image-data-an-identity-that-survives-metadata-edits"
 id="toc-image-data-an-identity-that-survives-metadata-edits"><span
 class="toc-section-number">2.2</span> Image data: an identity that
 survives metadata edits</a></li>
+<li><a
+href="chapter-003.html#block-marks-skeletons-and-earlier-contents"
+id="toc-block-marks-skeletons-and-earlier-contents"><span
+class="toc-section-number">2.3</span> Block marks, skeletons and earlier
+contents</a></li>
 <li><a href="chapter-003.html#three-states-and-never-a-match-on-failure"
 id="toc-three-states-and-never-a-match-on-failure"><span
-class="toc-section-number">2.3</span> Three states, and never a match on
+class="toc-section-number">2.4</span> Three states, and never a match on
 failure</a></li>
 <li><a href="chapter-003.html#where-it-fits"
-id="toc-where-it-fits"><span class="toc-section-number">2.4</span> Where
+id="toc-where-it-fits"><span class="toc-section-number">2.5</span> Where
 it fits</a></li>
 <li><a href="chapter-003.html#what-it-is-not"
-id="toc-what-it-is-not"><span class="toc-section-number">2.5</span> What
+id="toc-what-it-is-not"><span class="toc-section-number">2.6</span> What
 it is not</a></li>
 </ul></li>
 <li><a href="chapter-004.html#building-and-running"
@@ -114,12 +119,16 @@ class="toc-section-number">4</span> The schema</a>
 <ul>
 <li><a href="chapter-005.html#files" id="toc-files"><span
 class="toc-section-number">4.1</span> files</a></li>
+<li><a href="chapter-005.html#skeletons" id="toc-skeletons"><span
+class="toc-section-number">4.2</span> skeletons</a></li>
+<li><a href="chapter-005.html#versions" id="toc-versions"><span
+class="toc-section-number">4.3</span> versions</a></li>
 <li><a href="chapter-005.html#metadata" id="toc-metadata"><span
-class="toc-section-number">4.2</span> metadata</a></li>
+class="toc-section-number">4.4</span> metadata</a></li>
 <li><a href="chapter-005.html#dirs" id="toc-dirs"><span
-class="toc-section-number">4.3</span> dirs</a></li>
+class="toc-section-number">4.5</span> dirs</a></li>
 <li><a href="chapter-005.html#runs" id="toc-runs"><span
-class="toc-section-number">4.4</span> runs</a></li>
+class="toc-section-number">4.6</span> runs</a></li>
 </ul></li>
 <li><a href="chapter-006.html#incremental-behaviour"
 id="toc-incremental-behaviour"><span class="toc-section-number">5</span>

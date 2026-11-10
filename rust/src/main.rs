@@ -5,14 +5,21 @@
 //!
 //!   phindex --db INDEX.sqlite --root DIR [--only SUBDIR]... [--full-stat] [--workers N] [--progress-secs S]
 //!   phindex align --left A.sqlite --left-root DIR --right B.sqlite --right-root DIR --out REPORT_DIR  (see align.rs)
+//!   phindex versions --db INDEX.sqlite [--path FILE]                                                   (see restore.rs)
+//!   phindex restore --db INDEX.sqlite (--path FILE [--sha256 HEX] | --sha256 HEX) --out FILE [--from EDITED]
 //!
 //! Each file read records SHA-256, DNG raw blocks, Lightroom's fingerprint
 //! (supported DNGs), the metadata digest and compacted record, and the tiffgraph
 //! identity: dngsem_profile (strictest of dng-xmp/0, /1, /2 accepting the DNG)
 //! and preserved (Semantic Unison's SDE/0-preserved digest of every byte outside
 //! its XMP packet), and image_data (the stored image bytes of a camera raw, TIFF
-//! or JPEG that is not a DNG). All are taken from one read of the file. A failed or
-//! inapplicable identity leaves its value NULL and its reason in the _err column.
+//! or JPEG that is not a DNG), and block_marks (the file's large blocks by length
+//! and sampled ends, wherever they sit). All are taken from one read of the file.
+//! A failed or inapplicable identity leaves its value NULL and its reason in the
+//! _err column. The file's skeleton (every byte outside those blocks, packed) is
+//! kept in `skeletons` by SHA-256, and a path's earlier contents in `versions`,
+//! so a file a metadata edit has since rewritten is rebuilt as it was from the
+//! edited file (`phindex restore`).
 //! Files are only read. New, changed and unfinished files are read; vanished
 //! ones are marked gone. One writer commits every 500 results; workers stream
 //! results to it, so progress prints on time and an interrupted run resumes.
@@ -24,6 +31,7 @@
 //! identified row inherits its identities (moves and renames) without a read.
 
 mod align;
+mod restore;
 
 use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
@@ -42,11 +50,12 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 /// The identity definitions rows are stamped with, identical in phindex-ox. A row
 /// with another stamp is read again, so change it only when an identity's
 /// definition changes, never for a release that leaves them alone.
-const REVISION: &str = "phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1";
-/// The stamp before image_data. Its rows keep their other identities and are
-/// upgraded: a DNG without a read, any other file by its first bytes, and only
-/// a file that can have image data (JPEG, TIFF-family, RAF) is read again.
-const PREVIOUS_REVISION: &str = "phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved";
+const REVISION: &str = "phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1; block-marks/1";
+/// The stamp before block_marks and skeletons. Its rows keep their other
+/// identities and are upgraded from the file's structures alone: the blocks'
+/// ends and the bytes outside them are read, never a whole file. Rows of any
+/// older stamp are read again in full.
+const PREVIOUS_REVISION: &str = "phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1";
 const ENGINE: &str = "exiftool-rs (via phidentify)";
 
 const SCHEMA: &str = "
@@ -60,9 +69,13 @@ CREATE TABLE IF NOT EXISTS runs (root TEXT, started_unix INTEGER, finished_unix 
 CREATE TABLE IF NOT EXISTS metadata (path TEXT PRIMARY KEY, engine TEXT NOT NULL, record_deflate BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS dirs (path TEXT PRIMARY KEY, ino INTEGER NOT NULL, mtime_ns INTEGER NOT NULL,
   seen_unix INTEGER NOT NULL, gone INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS skeletons (sha256 TEXT PRIMARY KEY, record TEXT NOT NULL, skeleton BLOB NOT NULL);
+CREATE TABLE IF NOT EXISTS versions (path TEXT NOT NULL, sha256 TEXT NOT NULL, size INTEGER NOT NULL, mtime_ns INTEGER NOT NULL,
+  replaced_unix INTEGER NOT NULL, PRIMARY KEY (path, sha256, mtime_ns));
 ";
 const IDENTITY_COLUMNS: &[&str] = &["dng_blocks", "dng_blocks_err", "lr_digest", "lr_err", "md_digest", "md_err", "ids_rev",
-                                    "dngsem_profile", "dngsem_err", "preserved", "preserved_err", "image_data", "image_err"];
+                                    "dngsem_profile", "dngsem_err", "preserved", "preserved_err", "image_data", "image_err",
+                                    "block_marks", "block_marks_err"];
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct Ident {
@@ -111,7 +124,8 @@ fn migrate(db: &Connection) -> Result<()> {
                       CREATE INDEX IF NOT EXISTS files_lr ON files(lr_digest);
                       CREATE INDEX IF NOT EXISTS files_md ON files(md_digest);
                       CREATE INDEX IF NOT EXISTS files_preserved ON files(preserved);
-                      CREATE INDEX IF NOT EXISTS files_image ON files(image_data);")?;
+                      CREATE INDEX IF NOT EXISTS files_image ON files(image_data);
+                      CREATE INDEX IF NOT EXISTS files_block_marks ON files(block_marks);")?;
     Ok(())
 }
 
@@ -172,35 +186,24 @@ fn split(o: &phidentify::Outcome) -> (Option<&str>, Option<&str>) {
     }
 }
 
-/// A worker's result: every identity from a read, or, for an upgraded row whose
-/// first bytes rule out image data, just that.
+/// A skeleton as it is stored: its record and its packed bytes.
+type Stored = (String, Vec<u8>);
+
+/// A worker's result: every identity from a read with the file's skeleton, or,
+/// for an upgraded row, block marks and the skeleton from the file's structures.
 enum Outcome {
-    Read(Box<phidentify::Identity>),
-    /// With the tiffgraph walk redone from disk, for a row in `rewalk`.
-    NotImage(Option<Walked>),
+    Read(Box<phidentify::Identity>, Option<Stored>),
+    Structures(Result<String, String>, Option<Stored>),
 }
 
-/// A tiffgraph walk's `(profile, regions)` or reason.
-type Walked = Result<(String, Vec<(u64, u64)>), String>;
-
-/// The reason an older Rust build gave instead of walking a file over 1 GiB.
-const OVER_LIMIT: &str = "file over the in-memory limit";
-
-/// Whether the file's first bytes allow image data; an unreadable file is read
-/// in full, so the error is reported.
-fn image_candidate(path: &Path) -> bool {
-    use std::io::Read;
-    let mut prefix = [0u8; phidentify::image_data::PREFIX_LEN];
-    let Ok(mut f) = fs::File::open(path) else { return true };
-    let mut n = 0;
-    while n < prefix.len() {
-        match f.read(&mut prefix[n..]) {
-            Ok(0) => break,
-            Ok(k) => n += k,
-            Err(_) => return true,
-        }
+/// The skeleton of a content, ready to store. A file without one (no walker
+/// and over the whole-file limit) has none; a skeleton that cannot be packed
+/// fails the file.
+fn stored(skeleton: Option<Result<phidentify::skeleton::Skeleton, String>>, sha256: &str) -> Result<Option<Stored>, String> {
+    match skeleton {
+        Some(Ok(s)) => Ok(Some((s.record(sha256), s.pack()?))),
+        _ => Ok(None),
     }
-    phidentify::image_data::candidate(&prefix[..n])
 }
 
 fn deflate(text: &str) -> Result<Vec<u8>> {
@@ -260,27 +263,18 @@ fn update(db_path: &str, root: &str, only: Option<&str>, full_stat: bool, worker
     let started = now();
     let (lo, hi) = (format!("{scope}/"), format!("{scope}0"));
 
-    let upgraded_dngs = db.execute("UPDATE files SET image_data=NULL, image_err=?1, ids_rev=?2 WHERE ids_rev IS ?3
-                                    AND sha256 IS NOT NULL AND dng_blocks IS NOT NULL AND path >= ?4 AND path < ?5",
-                                   params![phidentify::image_data::DNG, rev, PREVIOUS_REVISION, lo, hi])?;
-    if upgraded_dngs > 0 {
-        eprintln!("upgrade: {upgraded_dngs} DNG rows given image_data without a read");
-    }
     let cleared = clear_unread_metadata(&mut db, &lo, &hi)?;
     if cleared > 0 {
         eprintln!("upgrade: {cleared} rows of file types the engine does not read: metadata cleared, not attempted");
     }
     let mut known: HashMap<String, Known> = HashMap::new();
     let mut upgradable: HashSet<String> = HashSet::new();
-    // Rows an older Rust build wrote without a tiffgraph walk, for files over the
-    // in-memory limit; the upgrade walks them from disk, as phindex-ox always did.
-    let mut rewalk: HashSet<String> = HashSet::new();
     let mut was_gone: HashSet<String> = HashSet::new();
     let mut files_by_dir: HashMap<String, Vec<Entry>> = HashMap::new();
     {
         let mut st = db.prepare("SELECT path, size, mtime_ns, ino, sha256 IS NOT NULL AND ids_rev IS ?3, sha256, gone, dev,
-                                 sha256 IS NOT NULL AND ids_rev IS ?4, dngsem_err IS ?5 FROM files WHERE path >= ?1 AND path < ?2")?;
-        let mut rows = st.query(params![lo, hi, rev, PREVIOUS_REVISION, OVER_LIMIT])?;
+                                 sha256 IS NOT NULL AND ids_rev IS ?4 FROM files WHERE path >= ?1 AND path < ?2")?;
+        let mut rows = st.query(params![lo, hi, rev, PREVIOUS_REVISION])?;
         while let Some(r) = rows.next()? {
             let path: String = r.get(0)?;
             let ident = Ident { size: r.get(1)?, mtime_ns: r.get(2)?, ino: r.get(3)? };
@@ -292,9 +286,6 @@ fn update(db_path: &str, root: &str, only: Option<&str>, full_stat: bool, worker
             }
             if r.get::<_, bool>(8)? {
                 upgradable.insert(path.clone());
-                if r.get::<_, bool>(9)? {
-                    rewalk.insert(path.clone());
-                }
             }
             known.insert(path, Known { ident, done: r.get(4)?, sha: r.get(5)? });
         }
@@ -356,12 +347,19 @@ fn update(db_path: &str, root: &str, only: Option<&str>, full_stat: bool, worker
     {
         let tx = db.transaction()?;
         {
+            // A path whose content changed keeps its earlier content's identity:
+            // with that content's skeleton, it is rebuilt from the file as it is now.
+            let mut version = tx.prepare("INSERT OR IGNORE INTO versions (path, sha256, size, mtime_ns, replaced_unix)
+                                          SELECT path, sha256, size, mtime_ns, ?2 FROM files WHERE path=?1 AND sha256 IS NOT NULL")?;
+            for e in fresh.iter().filter(|e| known.contains_key(&e.path)) {
+                version.execute(params![e.path, seen])?;
+            }
             let mut up = tx.prepare(
                 "INSERT INTO files (path,size,mtime_ns,ino,dev,sha256,hashed_unix,seen_unix,gone) VALUES (?1,?2,?3,?4,?5,NULL,NULL,?6,0)
                  ON CONFLICT(path) DO UPDATE SET size=excluded.size, mtime_ns=excluded.mtime_ns, ino=excluded.ino, dev=excluded.dev,
                  sha256=NULL, hashed_unix=NULL, seen_unix=excluded.seen_unix, gone=0, dng_blocks=NULL, dng_blocks_err=NULL,
                  lr_digest=NULL, lr_err=NULL, md_digest=NULL, md_err=NULL, ids_rev=NULL, dngsem_profile=NULL, dngsem_err=NULL,
-                 preserved=NULL, preserved_err=NULL, image_data=NULL, image_err=NULL")?;
+                 preserved=NULL, preserved_err=NULL, image_data=NULL, image_err=NULL, block_marks=NULL, block_marks_err=NULL")?;
             let mut m = tx.prepare("DELETE FROM metadata WHERE path=?1")?;
             for e in &fresh {
                 up.execute(params![e.path, e.ident.size, e.ident.mtime_ns, e.ident.ino, e.dev, seen])?;
@@ -387,9 +385,10 @@ fn update(db_path: &str, root: &str, only: Option<&str>, full_stat: bool, worker
                 dg.execute(params![p])?;
             }
             let mut mv = tx.prepare("UPDATE files SET (sha256, hashed_unix, dng_blocks, dng_blocks_err, lr_digest, lr_err, md_digest,
-                md_err, ids_rev, dngsem_profile, dngsem_err, preserved, preserved_err, image_data, image_err) = (SELECT sha256,
-                hashed_unix, dng_blocks, dng_blocks_err, lr_digest, lr_err, md_digest, md_err, ids_rev, dngsem_profile, dngsem_err,
-                preserved, preserved_err, image_data, image_err FROM files WHERE path=?2) WHERE path=?1")?;
+                md_err, ids_rev, dngsem_profile, dngsem_err, preserved, preserved_err, image_data, image_err, block_marks, block_marks_err) =
+                (SELECT sha256, hashed_unix, dng_blocks, dng_blocks_err, lr_digest, lr_err, md_digest, md_err, ids_rev, dngsem_profile,
+                dngsem_err, preserved, preserved_err, image_data, image_err, block_marks, block_marks_err FROM files WHERE path=?2)
+                WHERE path=?1")?;
             let mut mm = tx.prepare("INSERT OR REPLACE INTO metadata SELECT ?1, engine, record_deflate FROM metadata WHERE path=?2")?;
             for (p, old) in &moved {
                 mv.execute(params![p, old])?;
@@ -404,11 +403,11 @@ fn update(db_path: &str, root: &str, only: Option<&str>, full_stat: bool, worker
 
     let todo: Vec<&Entry> = changed.into_iter().filter(|e| !moved.contains_key(&e.path)).collect();
     let mut total: i64 = todo.iter().map(|e| e.ident.size).sum();
-    // Unchanged rows of the previous revision: only image_data is missing.
+    // Unchanged rows of the previous revision: only block marks and the skeleton are missing.
     let upgrade: HashSet<String> =
         todo.iter().filter(|e| upgradable.contains(&e.path) && known[&e.path].ident == e.ident).map(|e| e.path.clone()).collect();
-    eprintln!("walked {} files under {scope}, {} to read ({:.1} GB; {} of them only to add image_data, by their first bytes \
-               unless they can have it), {} moved or renamed (identities kept), {} gone, {errors} errors, \
+    eprintln!("walked {} files under {scope}, {} to read ({:.1} GB; {} of them only for block marks and a skeleton, \
+               from their structures), {} moved or renamed (identities kept), {} gone, {errors} errors, \
                {workers} workers (phindex), identities: {rev}",
               entries.len(), todo.len(), total as f64 / 1e9, upgrade.len(), moved.len(), gone.len());
     let stored_sha: HashMap<String, String> = todo.iter()
@@ -416,9 +415,10 @@ fn update(db_path: &str, root: &str, only: Option<&str>, full_stat: bool, worker
         .collect();
 
     let opts = phidentify::Options { dng_blocks: true, lightroom: true, metadata: true, preserved_regions: None, dng_semantic: true,
-                                     image_data: true };
-    let mut jobs: Vec<(String, Ident, bool, bool)> =
-        todo.iter().map(|e| (e.path.clone(), e.ident, upgrade.contains(&e.path), rewalk.contains(&e.path))).collect();
+                                     image_data: true, block_marks: true, skeleton: true };
+    // An upgraded row's job carries the SHA-256 the index holds for it.
+    let mut jobs: Vec<(String, Ident, Option<String>)> =
+        todo.iter().map(|e| (e.path.clone(), e.ident, upgrade.contains(&e.path).then(|| stored_sha[&e.path].clone()))).collect();
     jobs.sort_unstable_by(|a, b| a.0.cmp(&b.0));
     let n_todo = jobs.len();
     let (tx, rx) = mpsc::sync_channel::<(String, i64, Result<Outcome, String>)>(256);
@@ -427,12 +427,17 @@ fn update(db_path: &str, root: &str, only: Option<&str>, full_stat: bool, worker
         pool.install(|| {
             // In path order, so concurrent reads are of neighbouring files (short seeks on
             // hard disks); a split range would send each worker to a distant part of the tree.
-            jobs.into_iter().par_bridge().for_each_with(tx, |tx, (path, before, upgrade, rewalk)| {
-                let r = if upgrade && !image_candidate(Path::new(&path)) {
-                    Ok(Outcome::NotImage(rewalk.then(|| phidentify::semantic::strictest_file(Path::new(&path)))))
-                } else {
-                    phidentify::identify(Path::new(&path), opts.clone()).map(|id| Outcome::Read(Box::new(id)))
-                        .map_err(|e| format!("{e:#}"))
+            jobs.into_iter().par_bridge().for_each_with(tx, |tx, (path, before, upgrade)| {
+                let r = match upgrade {
+                    Some(sha) => {
+                        let built = phidentify::skeleton::build(Path::new(&path));
+                        let marks = built.as_ref().map_err(String::clone).and_then(phidentify::skeleton::block_marks);
+                        stored(Some(built), &sha).map(|s| Outcome::Structures(marks, s))
+                    }
+                    None => phidentify::identify(Path::new(&path), opts.clone()).map_err(|e| format!("{e:#}")).and_then(|mut id| {
+                        let s = stored(id.skeleton.take(), &id.sha256)?;
+                        Ok(Outcome::Read(Box::new(id), s))
+                    }),
                 };
                 let r = r.and_then(|o| match lstat(Path::new(&path)) {
                     Some((false, after, _)) if after == before => Ok(o),
@@ -446,27 +451,28 @@ fn update(db_path: &str, root: &str, only: Option<&str>, full_stat: bool, worker
     let t0 = Instant::now();
     let mut last = Instant::now();
     let (mut n, mut hashed, mut bytes, mut sha_changed) = (0u64, 0u64, 0i64, 0u64);
-    let (mut cb, mut cl, mut cm, mut cs, mut ci, mut cu) = (0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+    let (mut cb, mut cl, mut cm, mut cs, mut ci, mut cu, mut ck, mut cx) = (0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
     let mut batch = db.transaction()?;
     loop {
         match rx.recv_timeout(Duration::from_secs(1)) {
             Ok((path, size, result)) => {
                 n += 1;
                 match result {
-                    Ok(Outcome::NotImage(walked)) => {
-                        batch.execute("UPDATE files SET image_data=NULL, image_err=?1, ids_rev=?2 WHERE path=?3",
-                                      params![phidentify::image_data::NOT_APPLICABLE, rev, path])?;
-                        if let Some(w) = walked {
-                            let (p, e) = match &w {
-                                Ok((profile, _)) => (Some(profile.as_str()), None),
-                                Err(reason) => (None, Some(reason.as_str())),
-                            };
-                            batch.execute("UPDATE files SET dngsem_profile=?1, dngsem_err=?2 WHERE path=?3", params![p, e, path])?;
+                    Ok(Outcome::Structures(marks, skeleton)) => {
+                        let (k, ke) = match &marks {
+                            Ok(m) => (Some(m.as_str()), None),
+                            Err(e) => (None, Some(e.as_str())),
+                        };
+                        cx += k.is_some() as u64;
+                        batch.execute("UPDATE files SET block_marks=?1, block_marks_err=?2, ids_rev=?3 WHERE path=?4", params![k, ke, rev, path])?;
+                        if let Some((record, packed)) = &skeleton {
+                            batch.execute("INSERT OR IGNORE INTO skeletons VALUES (?1,?2,?3)", params![stored_sha[&path], record, packed])?;
+                            ck += 1;
                         }
                         cu += 1;
                         total -= size;
                     }
-                    Ok(Outcome::Read(id)) => {
+                    Ok(Outcome::Read(id, skeleton)) => {
                         if stored_sha.get(&path).is_some_and(|old| *old != id.sha256) {
                             sha_changed += 1;
                             errors += 1;
@@ -478,6 +484,8 @@ fn update(db_path: &str, root: &str, only: Option<&str>, full_stat: bool, worker
                         let (s, se) = split(&id.dng_semantic_profile);
                         let (p, pe) = split(&id.preserved_sha256);
                         let (i, ie) = split(&id.image_data_sha256);
+                        let (k, ke) = split(&id.block_marks_sha256);
+                        cx += k.is_some() as u64;
                         ci += i.is_some() as u64;
                         cb += b.is_some() as u64;
                         cl += l.is_some() as u64;
@@ -485,8 +493,13 @@ fn update(db_path: &str, root: &str, only: Option<&str>, full_stat: bool, worker
                         cs += p.is_some() as u64;
                         batch.execute("UPDATE files SET sha256=?1, hashed_unix=?2, dng_blocks=?3, dng_blocks_err=?4, lr_digest=?5,
                                        lr_err=?6, md_digest=?7, md_err=?8, ids_rev=?9, dngsem_profile=?10, dngsem_err=?11,
-                                       preserved=?12, preserved_err=?13, image_data=?14, image_err=?15 WHERE path=?16",
-                                      params![id.sha256, now(), b, be, l, le, m, me, rev, s, se, p, pe, i, ie, path])?;
+                                       preserved=?12, preserved_err=?13, image_data=?14, image_err=?15, block_marks=?16,
+                                       block_marks_err=?17 WHERE path=?18",
+                                      params![id.sha256, now(), b, be, l, le, m, me, rev, s, se, p, pe, i, ie, k, ke, path])?;
+                        if let Some((record, packed)) = &skeleton {
+                            batch.execute("INSERT OR IGNORE INTO skeletons VALUES (?1,?2,?3)", params![id.sha256, record, packed])?;
+                            ck += 1;
+                        }
                         if let Some(json) = &id.metadata_json {
                             let record = phidentify::metadata::compact(json)?;
                             batch.execute("INSERT OR REPLACE INTO metadata VALUES (?1,?2,?3)", params![path, ENGINE, deflate(&record)?])?;
@@ -516,7 +529,8 @@ fn update(db_path: &str, root: &str, only: Option<&str>, full_stat: bool, worker
             let eta = if rate > 0.0 { (total - bytes).max(0) as f64 / rate } else { 0.0 };
             let el = t0.elapsed().as_secs();
             eprintln!("+{}h{:02}m {n}/{n_todo} files, {:.1}/{:.1} GB ({:.1}%), {:.0} MB/s, {errors} errors, ETA {}h{:02}m; \
-                       raw blocks {cb}, Lightroom {cl}, metadata {cm}, preserved {cs}, image data {ci}, upgraded unread {cu}",
+                       raw blocks {cb}, Lightroom {cl}, metadata {cm}, preserved {cs}, image data {ci}, block marks {cx}, \
+                       skeletons {ck}, upgraded unread {cu}",
                       el / 3600, el % 3600 / 60, bytes as f64 / 1e9, total as f64 / 1e9, 100.0 * bytes as f64 / total.max(1) as f64,
                       rate / 1e6, eta as u64 / 3600, eta as u64 % 3600 / 60);
         }
@@ -526,15 +540,19 @@ fn update(db_path: &str, root: &str, only: Option<&str>, full_stat: bool, worker
     db.execute("INSERT INTO runs VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
                params![scope, started, now(), entries.len() as i64, hashed as i64, bytes, gone.len() as i64, errors as i64])?;
     eprintln!("done: read {hashed} files, {:.1} GB, {errors} errors ({sha_changed} stored SHA-256 mismatches); raw blocks {cb}, \
-               Lightroom {cl}, metadata {cm}, preserved {cs}, image data {ci}; upgraded without a read {cu}", bytes as f64 / 1e9);
+               Lightroom {cl}, metadata {cm}, preserved {cs}, image data {ci}, block marks {cx}, skeletons {ck}; \
+               upgraded without a read {cu}", bytes as f64 / 1e9);
     Ok(())
 }
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     eprintln!("phindex {} built {}", env!("PHINDEX_COMMIT"), env!("PHINDEX_BUILT"));
-    if args.get(1).map(String::as_str) == Some("align") {
-        return align::run(&args[2..]);
+    match args.get(1).map(String::as_str) {
+        Some("align") => return align::run(&args[2..]),
+        Some("versions") => return restore::versions(&args[2..]),
+        Some("restore") => return restore::run(&args[2..]),
+        _ => {}
     }
     let get = |flag: &str| args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned();
     let workers: usize = get("--workers").map(|w| w.parse()).transpose()?.unwrap_or(8);

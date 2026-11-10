@@ -2,9 +2,9 @@
 
 This manual is by Alexy Khrabrov, with Claude as co-author. The ideas and decisions are Alexy's; Claude wrote the text and the code with him.
 
-It describes phindex 0.3.0 as of 2026-11-08: the Rust binary `phindex` and its OCaml counterpart `phindex-ox`, which runs under stock OCaml 5 and under OxCaml. phindex is licensed under the MIT License; the binaries link code under other licences, as the chapter on licences explains. Its source is at [github.com/firstpair/phindex](https://github.com/firstpair/phindex).
+It describes phindex 0.4.0 as of 2026-11-10: the Rust binary `phindex` and its OCaml counterpart `phindex-ox`, which runs under stock OCaml 5 and under OxCaml. phindex is licensed under the MIT License; the binaries link code under other licences, as the chapter on licences explains. Its source is at [github.com/firstpair/phindex](https://github.com/firstpair/phindex).
 
-0.3.0 changes no identity. The indexers and the revision stamp are those of 0.2.0, so an index 0.2.0 wrote is continued without reading anything again. What is new: `align` writes the image files it matched only as unit partners to their own list, `partner-pairs.tsv`, and reports its progress on stderr; `dngc`, DNG Compare's unified command, takes its pairs and metadata from phindex indexes; and a runner script starts long runs. New sections also cover copying an index between volumes and a throughput limit set by the enclosure rather than the disks.
+0.4.0 adds one identity and a way back from metadata edits. Every file gets `block_marks`, phidentify's identity of a file's large blocks wherever they sit, and the index keeps a **skeleton** of every content it reads and the SHA-256 of each path's earlier contents. With those, `phindex restore` rebuilds a file as it was before an editor wrote into it, from the edited file. The revision stamp gains `; block-marks/1`. An index written by 0.2.0 or 0.3.0 is upgraded at the next run from each file's structures, without reading any file in full; the earlier one-step upgrade, for indexes written before `image_data`, is gone, and such an index is read again in full.
 
 Every example in this manual uses synthetic files or generic paths such as `/archive`, `/backup`, `/Volumes/Archive` and `/Volumes/Backup`. Nothing here depends on a particular photo library, disk or catalog.
 
@@ -31,6 +31,7 @@ Every identity has its own column in the `files` table, and every identity that 
 | `dngsem_profile`, `dngsem_err` | strictest tiffgraph grammar that accepts the file | every file | the same grammar applies |
 | `preserved`, `preserved_err` | Semantic Unison's `SDE/0-preserved` digest | files a grammar accepted | every byte outside the XMP packet is equal, at the same size and layout |
 | `image_data`, `image_err` | stored image bytes of a camera raw, TIFF or JPEG that is not a DNG | every file | same image bytes in the same order; metadata may differ |
+| `block_marks`, `block_marks_err` | the file's large blocks, by length and by a hash of each block's two ends | every file | same blocks, wherever they sit: the same picture with the same previews, maker notes and profiles; metadata may differ |
 | `ids_rev` | the revision stamp of the identity definitions | every identified file | the identities were computed by the same definitions |
 
 phidentify's manual defines each identity exactly: what goes into it, what equality proves and what it does not, and what it costs. This manual does not repeat those definitions. In short:
@@ -60,6 +61,32 @@ Some files are refused, with a reason in `image_err`:
 - **Files that are not a TIFF-family file or JPEG**, with `not a TIFF-family file or JPEG`: CR3, HEIC and other ISO-media containers, videos, sidecars, text. The decision is made from the first 16 bytes, which is what makes the upgrade described under *Incremental behaviour* cheap.
 
 Why it matters: the commonest edit to a set of camera files is a capture-time shift, made when the camera clock was wrong or in another time zone. It rewrites a few bytes of EXIF in every file, so every whole-file SHA-256 changes, and a byte-for-byte comparison against an unshifted copy says that nothing is backed up. With `image_data` the shifted copy and the original still agree, and `phindex align` can pair them and say that only their metadata differs.
+
+## Block marks, skeletons and earlier contents
+
+An editor that writes a rating, a caption or develop settings into a photo rewrites the file's small structures and carries its large blocks over unchanged: the raw strips or tiles, the embedded previews, the maker notes, the profiles. phidentify cuts a file along those lines, by the rules of DNG Compare's archive format, into **blocks** and the **skeleton**, which is every byte outside the blocks. phindex stores three things from that cut:
+
+- **`block_marks`**, an identity: equal values mean the two files hold blocks of the same lengths with the same first and last 4,096 bytes. It applies to DNGs, other TIFF-based raws and JPEGs, and it survives a metadata edit. On 249 real files compared before and after years of edits in Lightroom Classic and Photo Mechanic, it was equal in all 249. It is a sampled identity: a strong hint, and not proof of equal bytes.
+- **A skeleton per content**, in the `skeletons` table by SHA-256: the packed bytes outside the blocks, and a record of where each block goes. On real files that is about 5 KB for a DNG and 10 KB for a JPEG. A file of another format up to 1 MiB, such as an XMP sidecar, is stored whole as its own skeleton; a larger one, such as a video, has none.
+- **Earlier contents per path**, in the `versions` table: when a run finds that a path's content has changed, it records the SHA-256 the path had before.
+
+Together they make an indexed tree its own safety net against metadata edits. The file as it was is the old skeleton with the blocks taken from the file as it is now:
+
+```sh
+phindex versions --db archive.sqlite --path /archive/2024/IMG_0042.dng
+phindex restore  --db archive.sqlite --path /archive/2024/IMG_0042.dng --out /tmp/IMG_0042-before.dng
+phindex restore  --db archive.sqlite --sha256 5b8de6f0… --out /tmp/as-it-was.dng [--from EDITED]
+```
+
+`versions` lists earlier contents: path, SHA-256, size, modification time, when the run saw it replaced, and whether a skeleton is held. `restore` writes one content to `--out`, which must not exist. With `--path` alone it takes the path's latest earlier content; `--sha256` names any content. The blocks come from `--from` when given, otherwise from the first of these that rebuilds it: the file at `--path`, a live file the index lists with that SHA-256, a live file listed with the same block marks (at most 8 are tried). What is written is checked against the SHA-256, and on a mismatch nothing is left behind. `restore` only reads the index, and reads an idle one without writing beside it.
+
+Three limits:
+
+- **The skeleton must exist before the edit.** A file is protected from the run that first indexes it. An edit made before that is not recoverable from the index.
+- **A destroyed block is gone.** An edit that replaces a block, such as a regenerated DNG preview or re-encoded image data, cannot be undone from the edited file; `restore` says which block is missing. Keep such contents from another copy.
+- **Skeletons are never removed.** The table grows by a few kilobytes per content ever read. For a library of 1.7 million files that is of the order of 15 GB in the index.
+
+Both commands are in the Rust `phindex` only. phindex-ox writes the same three things.
 
 ## Three states, and never a match on failure
 
@@ -168,12 +195,12 @@ Everything goes to stderr. A run prints a launch header, the walk, the plan, pro
 ```text
 phindex 2f2c4580ffbf542a1bb4edba4ce1b9327a575ff6 built Mon 2026-11-02 13:50:12 PST
 walk: 3104 directories, 12 listed, 3092 unchanged and taken from the index, 1 s
-walked 1612934 files under /archive, 412 to read (9.8 GB; 0 of them only to add image_data, by their first bytes unless they can have it), 37 moved or renamed (identities kept), 5 gone, 0 errors, 16 workers (phindex), identities: phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1
-+0h01m 288/412 files, 6.9/9.8 GB (70.4%), 115 MB/s, 0 errors, ETA 0h00m; raw blocks 263, Lightroom 251, metadata 288, preserved 259, image data 21, upgraded unread 0
-done: read 412 files, 9.8 GB, 0 errors (0 stored SHA-256 mismatches); raw blocks 381, Lightroom 362, metadata 412, preserved 376, image data 30; upgraded without a read 0
+walked 1612934 files under /archive, 412 to read (9.8 GB; 0 of them only for block marks and a skeleton, from their structures), 37 moved or renamed (identities kept), 5 gone, 0 errors, 16 workers (phindex), identities: phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1; block-marks/1
++0h01m 288/412 files, 6.9/9.8 GB (70.4%), 115 MB/s, 0 errors, ETA 0h00m; raw blocks 263, Lightroom 251, metadata 288, preserved 259, image data 21, block marks 284, skeletons 288, upgraded unread 0
+done: read 412 files, 9.8 GB, 0 errors (0 stored SHA-256 mismatches); raw blocks 381, Lightroom 362, metadata 412, preserved 376, image data 30, block marks 407, skeletons 412; upgraded without a read 0
 ```
 
-The numbers are illustrative. The launch header is described below. The walk line says how many directories were listed and how many were taken from the index. The plan line says how many files must be read, how many were carried across a move, and how many vanished. The progress line counts, for the files read so far, how many got each identity, and how many rows of the previous revision were settled without a read. Its ETA assumes the remaining bytes go at the rate so far. In phindex the writer wakes every second, so progress lines arrive on time; in phindex-ox they are checked after each batch. A run that upgrades an index from the previous revision prints one more line before the walk, `upgrade: N DNG rows given image_data without a read`, and its plan line says how many of the files to read are there only to add `image_data`.
+The numbers are illustrative. The launch header is described below. The walk line says how many directories were listed and how many were taken from the index. The plan line says how many files must be read, how many were carried across a move, and how many vanished. The progress line counts, for the files read so far, how many got each identity, and how many rows of the previous revision were settled without a read. Its ETA assumes the remaining bytes go at the rate so far. In phindex the writer wakes every second, so progress lines arrive on time; in phindex-ox they are checked after each batch. In a run that upgrades an index from the previous revision, the plan line says how many of the files are there only for block marks and a skeleton.
 
 ## The launch header
 
@@ -211,7 +238,7 @@ scripts/phindex-run.sh --db /Volumes/Backup/index/archive.sqlite \
 
 # The schema
 
-phindex creates four tables and migrates older ones by adding missing identity columns. Both indexers create the same schema.
+phindex creates six tables and migrates older ones by adding missing identity columns and tables. Both indexers create the same schema.
 
 ## files
 
@@ -230,9 +257,34 @@ One row per path ever seen under an indexed root.
 | `gone` | INTEGER | 1 once the path has vanished; the row and its identities are kept |
 | identity columns | TEXT | as in the first chapter, with `ids_rev` |
 
-Indexes cover `sha256`, `size`, `dng_blocks`, `lr_digest`, `md_digest`, `preserved` and `image_data`, so joins on any identity are fast.
+Indexes cover `sha256`, `size`, `dng_blocks`, `lr_digest`, `md_digest`, `preserved`, `image_data` and `block_marks`, so joins on any identity are fast.
 
 A row is **complete** when `sha256` is not NULL and `ids_rev` equals the running indexer's revision stamp. Only complete rows are skipped on a rerun and only complete rows can pass their identities to a moved file.
+
+## skeletons
+
+One row per content that has a skeleton, whichever paths held it.
+
+| Column | Type | Meaning |
+| --- | --- | --- |
+| `sha256` | TEXT, primary key | the content's whole-file SHA-256 |
+| `record` | TEXT | JSON: `sha256`, `size`, `format` (`tiff`, `jpeg` or `whole`), `blocks` (`[at, len, mark, role]` each), `skeleton_bytes`, `skeleton_sha256`, `skeleton_format` (`zstd`) |
+| `skeleton` | BLOB | every byte outside the blocks, as one zstd frame |
+
+The table has the columns of DNG Compare's `skeletons.sqlite3`, and the record has that format's members other than the path. Rows are added and never changed or removed.
+
+## versions
+
+One row per earlier content of a path.
+
+| Column | Type | Meaning |
+| --- | --- | --- |
+| `path` | TEXT | the path |
+| `sha256` | TEXT | the content it held |
+| `size`, `mtime_ns` | INTEGER | that content's size and modification time |
+| `replaced_unix` | INTEGER | when a run first saw the path with other content |
+
+The primary key is `(path, sha256, mtime_ns)`. A row is written when a run resets a path's row because its size, mtime or inode changed. A path that vanishes gets no row: there is then no file to take blocks from.
 
 ## metadata
 
@@ -284,26 +336,25 @@ Everything else is skipped without opening the file.
 Each identified row is stamped, in `ids_rev`, with the identity definitions that computed it:
 
 ```text
-phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1
+phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1; block-marks/1
 ```
 
-The stamp names the phidentify identities and features, the tiffgraph grammars and their XMP limit, the preserved-digest definition and the image-data definition. The `0.1.0` in it is phidentify's identity version, not phindex's; phindex 0.2.0 added only the `; image-data/1` part. It is the same constant in `phindex` and `phindex-ox`, so either can continue an index the other started.
+The stamp names the phidentify identities and features, the tiffgraph grammars and their XMP limit, the preserved-digest definition, the image-data definition and the block-marks definition. The `0.1.0` in it is phidentify's identity version, not phindex's; phindex 0.2.0 added the `; image-data/1` part and 0.4.0 the `; block-marks/1` part. It is the same constant in `phindex` and `phindex-ox`, so either can continue an index the other started.
 
 The stamp changes only when an identity's definition changes: a new grammar, a different limit, a fix that changes some files' values. A release that leaves the definitions alone keeps the stamp, because a new stamp makes every row incomplete and the next run reads every file again. That full re-read is also a check: when it re-reads a file whose size, mtime and inode are unchanged and finds a different SHA-256 from the one stored, it prints `SHA256 CHANGED with unchanged size/mtime/inode`, counts the file as an error and in the summary's stored SHA-256 mismatches, and stores the new values. On an archive, such a line deserves attention: something changed the bytes without changing the metadata the file system keeps.
 
 ## Upgrading from the previous revision
 
-Adding `image_data` changed the stamp, and by the rule above that would make every row incomplete and send the next run through the whole archive again: days of reading on a large tree, to compute one identity that most of its files cannot even have. phindex 0.2.0 avoids that for exactly one step, from the previous stamp (the current one without `; image-data/1`) to the current one. A row of the previous revision whose file is unchanged keeps all its other identities and needs only `image_data`, and for most files that can be settled without reading them:
+Adding `block_marks` changed the stamp, and by the rule above that would make every row incomplete and send the next run through the whole archive again: days of reading on a large tree. phindex 0.4.0 avoids that for exactly one step, from the previous stamp (the current one without `; block-marks/1`) to the current one. A row of the previous revision whose file is unchanged keeps all its other identities, and what it lacks comes from the file's structures alone:
 
-1. **DNG rows, without a read.** A row whose `dng_blocks` is set is a DNG, and `image_data` refuses DNGs. Before the walk, one SQL `UPDATE` sets their `image_err` to the DNG reason and their `ids_rev` to the new stamp, for every such row in the walked scope. No file is opened.
-2. **Other rows, by their first 16 bytes.** Every other unchanged row of the previous revision is planned for reading, but marked as an upgrade. A worker opens the file and reads its first 16 bytes, the test phidentify's `image_data::candidate` applies: a JPEG's SOI marker, a TIFF byte-order mark, or a RAF header. A file that fails it, such as a video, an XMP sidecar or a Capture One settings file, cannot have image data: its row gets `image_err` = `not a TIFF-family file or JPEG` and the new stamp, and nothing else in it changes. A file that cannot be opened is read in full, so its error is reported as usual.
-3. **Candidates, in full.** A JPEG, a TIFF-family file or a RAF is identified again from scratch, exactly as on a first run, and all its identities are rewritten. The stored SHA-256 check above applies to them too.
+- A worker opens the file and builds its skeleton: it reads the header and directories, the bytes outside the blocks, and each block's first and last 4,096 bytes. It never reads a whole block, so a 50 MB raw costs a handful of small reads.
+- The row gets `block_marks` or its reason and the new stamp, and the skeleton is stored under the SHA-256 the row already holds. Nothing else in the row changes.
 
-The progress and summary lines count the second kind as `upgraded unread`. Files that are new or changed are read in full as always; the upgrade applies only to rows whose size, mtime and inode are unchanged.
+The progress and summary lines count these rows as `upgraded unread`. Files that are new or changed are read in full as always; the upgrade applies only to rows whose size, mtime and inode are unchanged. Because the stored SHA-256 is trusted for them, the check for a silently changed file, described above, does not run for these rows in the upgrading run.
 
-On real archives the savings were large. In an archive of about 459,000 files, 72,072 DNG rows were upgraded by the SQL update and 94,455 files, 3.8 TB, had to be read again. In another of about 1.6 million files, the figures were 102,796 DNG rows and 83,003 files, 1.1 TB. Everything else was settled by its first 16 bytes. On a real folder of 46 DNGs, 48 JPEGs and 2 movies, the upgrade left the DNGs and movies unread and re-read the 48 JPEGs, and every identity other than `image_data` came out the same as before. phindex and phindex-ox, run on the same real folders, wrote identical rows both when indexing them fresh and when upgrading them from the previous revision.
+On a synthetic tree, phindex, phindex-ox under stock OCaml and phindex-ox under OxCaml each upgraded an index another of them had written, and all three ended with the same rows and the same skeletons as a fresh index. On a real archive on hard disks, one folder of 12,365 files (346 GB, mostly DNGs) was upgraded in 149 seconds with 8 workers: 83 files per second, no file read in full, 0 errors, 655 MB of memory at its peak. 12,331 of the files got block marks and a skeleton, 125 MB of skeletons in all, about 10 KB each; the other 34 were videos. At that rate an index of 1.7 million files is upgraded in about six hours.
 
-The upgrade covers only that one previous stamp. A row with any older stamp is read in full, as before.
+The upgrade covers only that one previous stamp. A row with any older stamp, such as one written before `image_data`, is read in full.
 
 ## The quick walk
 
@@ -406,7 +457,7 @@ The two indexers were run on the same folder of 1,061 files, 4.6 GB, with 16 wor
 - **The results were identical.** Every row of `files` and `dirs` matched in every column, error reasons included. The decompressed metadata records differed in one member only, the file access time, which changes when a file is read and which the metadata digest leaves out.
 - **phindex took 13 seconds and 2.3 GB of memory.** phindex-ox took 25 seconds and 3.5 GB.
 
-Equal results are the point: the identities do not depend on which runtime asked for them. For 0.2.0 the check was repeated on real folders with `image_data`: phindex and phindex-ox wrote identical rows when indexing the folders fresh and when upgrading them from the previous revision. The comparison measured totals and did not attribute the difference in time and memory. Two structural differences are the obvious candidates: phindex streams results from a pool that never stops, while phindex-ox spawns domains per batch and waits for each batch's slowest file before the next begins. No stock OCaml timing was taken, so the comparison says nothing about stock OCaml's speed relative to OxCaml's.
+Equal results are the point: the identities do not depend on which runtime asked for them. For 0.2.0 the check was repeated on real folders with `image_data`: phindex and phindex-ox wrote identical rows when indexing the folders fresh and when upgrading them from the previous revision. For 0.4.0 it was repeated on a synthetic tree of TIFFs, JPEGs, text files, a sidecar and a file with no walker, with phindex and with phindex-ox under stock OCaml and under OxCaml: the three wrote identical `files`, `skeletons` and `versions` rows when indexing fresh, after an edit, and when each upgraded an index another had written. The stored metadata records differ between any two runs, because they hold the file's access time. The comparison measured totals and did not attribute the difference in time and memory. Two structural differences are the obvious candidates: phindex streams results from a pool that never stops, while phindex-ox spawns domains per batch and waits for each batch's slowest file before the next begins. No stock OCaml timing was taken, so the comparison says nothing about stock OCaml's speed relative to OxCaml's.
 
 ## Files over 1 GiB
 
@@ -414,7 +465,7 @@ phidentify holds a file in memory to identify it only up to 1 GiB. A larger file
 
 The 0.1.0 manual listed this as an open item. phindex-ox's walk had always run on positional reads from its own file descriptor, so for a file over 1 GiB it recorded a profile or a grammar's refusal, while phindex, whose walk ran over the in-memory bytes, recorded `file over the in-memory limit` in `dngsem_err`; on such files the two indexes could disagree. phidentify's Rust core now walks a file over the limit from disk with tiffgraph's `FileReader`, the Rust counterpart of what the OCaml package does, so both indexers record the same `dngsem_profile` or reason. The `preserved` digest and `image_data` still need the bytes in memory and report the limit in both.
 
-Rows an older phindex build wrote for such files still carry the old reason. The upgrade from the previous revision redoes their walk without a full read: a row of the previous revision whose `dngsem_err` is `file over the in-memory limit`, and whose first bytes rule out image data, gets its tiffgraph walk run from disk alongside its `image_err`. A 3 GB AVI, for example, is settled by its first 16 bytes and a walk of its header, not by reading 3 GB. A candidate over the limit, such as a huge TIFF, is identified in full, which includes the walk from disk.
+A file over the limit still gets block marks and a skeleton when it is a classic TIFF or a JPEG, because the skeleton is built by positional reads and never needs the file in memory. A video over the limit has neither.
 
 ## Which to use
 
@@ -755,8 +806,14 @@ The integration tests in [`rust/tests/incremental.rs`](../rust/tests/incremental
 - **Reruns read only what changed.** A first run reads six files; an unchanged rerun reads none; a new nested folder is found by the quick walk and its one file read; a file rewritten in place is not read by the quick walk and is read by `--full-stat`, with a new SHA-256; a deleted file is marked gone and not counted again on the next run.
 - **Moves keep identities, and `--only` limits the walk.** Renaming a folder of three files reads nothing and reports three moved and three gone, with the SHA-256 carried to the new path. With `--only` on a new folder, the new file is read and a file moved into the folder from outside it is carried, and its old path, outside `--only`, is marked gone. A file moved away and then back to its old path, unchanged, is not read and is no longer marked gone.
 - **`--only` may be repeated.** Two new folders given as two `--only` options are both indexed in one run.
-- **The upgrade reads only image candidates.** Rows are set back to the previous revision, one is marked as a DNG and one is given the reason an older build wrote for files over 1 GiB. The next run reads only the JPEG again; the DNG row gets the DNG reason, the text file `not a TIFF-family file or JPEG` and its tiffgraph walk redone, every row the new stamp, and a further run reads nothing.
 - **Identities are recorded separately.** For a text file, the SHA-256 is present, the DNG identities are absent, the metadata digest is present, the refused grammar leaves a reason in `dngsem_err`, and one metadata record is stored.
+
+The tests in [`rust/tests/skeletons.rs`](../rust/tests/skeletons.rs) build small TIFFs, JPEGs, a sidecar and a file with no walker:
+
+- **Block marks and a skeleton per content.** A DNG-like TIFF and a JPEG get block marks; a sidecar and a large file of another format get the reason. Two equal files share one skeleton, the sidecar is stored whole, and the large file has none.
+- **An edited file is restored as it was.** A file is rewritten twice with a longer XMP packet. Its block marks stay the same, both earlier contents are listed by `versions`, and `restore` writes each back byte for byte: the latest by path, an older one by SHA-256, one found by block marks after the edited file moved, and one from a file the index never saw. An existing `--out` is refused.
+- **A content whose blocks are gone is not restored.** After the image data itself is replaced, `restore` fails, names the missing block and leaves nothing behind.
+- **The upgrade reads no file in full.** Rows set back to the previous stamp, with the skeletons deleted, come back with the same block marks, reasons, stamp and skeletons, and the run reads nothing in full. A row of an older stamp is read again.
 
 The test in [`rust/tests/align.rs`](../rust/tests/align.rs) is the worked example of the previous chapter: it checks every unit's kind, status, flags and target, the tiers of `IMG_2`, the two image pairs, the one partner pair and the right-only units.
 
@@ -779,7 +836,7 @@ Built phindex and phindex-ox binaries are therefore covered by the GPL. phindex 
 
 | Item | Value |
 | --- | --- |
-| Version | 0.3.0 |
+| Version | 0.4.0 |
 | Revision stamp | `phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1` |
 | Upgraded without a full read | rows of the stamp without `; image-data/1` |
 | Metadata engine label | `exiftool-rs (via phidentify)` |

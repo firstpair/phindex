@@ -2,7 +2,7 @@
 
 phindex builds and keeps up to date an index of every file under a directory
 tree, for example a photo archive or a backup volume, in one SQLite file. Each
-file is read once, and six separate identities from
+file is read once, and seven separate identities from
 [phidentify](https://github.com/firstpair/phidentify) are recorded for it:
 
 | Column | Identity | Equal values mean |
@@ -13,6 +13,17 @@ file is read once, and six separate identities from
 | `md_digest` | exiftool-rs metadata record, location left out | same metadata |
 | `dngsem_profile` + `preserved` | strictest tiffgraph grammar and Semantic Unison's `SDE/0-preserved` digest | only the XMP packet can differ (same profile) |
 | `image_data` | stored image bytes of a camera raw, TIFF or JPEG that is not a DNG | same image data; metadata such as a shifted capture time may differ |
+| `block_marks` | the file's large blocks by length and a hash of each block's two ends | same blocks wherever they sit: the same picture with its previews and maker notes; metadata may differ |
+
+The index also keeps a **skeleton** of every content it reads (every byte
+outside those blocks, a few kilobytes) and the SHA-256 of each path's earlier
+contents. A file that an editor has since written a rating or develop settings
+into is rebuilt as it was, from the edited file, and checked by SHA-256:
+
+```sh
+phindex versions --db archive.sqlite --path /path/to/archive/IMG_0042.dng
+phindex restore  --db archive.sqlite --path /path/to/archive/IMG_0042.dng --out /tmp/IMG_0042-before.dng
+```
 
 An identity that doesn't apply, or fails, leaves its column NULL and its reason
 in the matching `_err` column. It's never a match. The compacted metadata record
@@ -26,10 +37,10 @@ their SHA-256 and length.
   size, mtime or inode changed, or the identity definitions changed. Each row
   carries a revision stamp, and that stamp changes only when an identity's
   definition does.
-- **New identities don't mean a full re-read.** When `image_data` was added, rows
-  of the previous revision were upgraded in place: DNGs without a read, other
-  files by their first 16 bytes, and only JPEGs, TIFFs and non-DNG raws read
-  again in full.
+- **New identities don't mean a full re-read.** When `block_marks` and skeletons
+  were added, rows of the previous revision are upgraded in place from each
+  file's structures: its directories and the two ends of each block, never the
+  whole file.
 - **Quick walk.** Every directory's inode and mtime are stored. Adding, removing or
   renaming an entry changes its directory's mtime. So a rerun lists only changed
   directories (new folders, added or removed files) and takes the rest from the

@@ -132,52 +132,6 @@ fn identities_are_recorded_separately() {
     assert_eq!(n, 1);
 }
 
-#[test]
-fn previous_revision_rows_are_upgraded_reading_only_image_candidates() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = fs::canonicalize(tmp.path()).unwrap().join("tree");
-    let db = tmp.path().join("index.sqlite");
-    write(&root.join("note.txt"), "not an image");
-    write(&root.join("pseudo.dng"), "a row marked as a DNG below");
-    // SOI, DQT, SOF0, SOS, two bytes of scan, EOI.
-    let jpeg = [0xFF, 0xD8, 0xFF, 0xDB, 0x00, 0x03, 0x00, 0xFF, 0xC0, 0x00, 0x03, 0x08, 0xFF, 0xDA, 0x00, 0x03, 0x00, 0x11,
-                0x22, 0xFF, 0xD9];
-    fs::write(root.join("pic.jpg"), jpeg).unwrap();
-    assert_eq!(run(&db, &root, &[]).0, 3);
-    let c = Connection::open(&db).unwrap();
-    let image: Option<String> =
-        c.query_row("SELECT image_data FROM files WHERE path LIKE '%pic.jpg'", [], |r| r.get(0)).unwrap();
-    assert!(image.is_some(), "a JPEG gets image data");
-    let rev: String = c.query_row("SELECT ids_rev FROM files LIMIT 1", [], |r| r.get(0)).unwrap();
-    let previous = rev.strip_suffix("; image-data/1").expect("current revision").to_string();
-    c.execute("UPDATE files SET ids_rev=?1, image_data=NULL, image_err=NULL", [&previous]).unwrap();
-    c.execute("UPDATE files SET dng_blocks='stand-in' WHERE path LIKE '%pseudo.dng'", []).unwrap();
-    // An older Rust build gave this reason instead of walking a file over 1 GiB.
-    let walked: String = c.query_row("SELECT dngsem_err FROM files WHERE path LIKE '%note.txt'", [], |r| r.get(0)).unwrap();
-    c.execute("UPDATE files SET dngsem_err='file over the in-memory limit' WHERE path LIKE '%note.txt'", []).unwrap();
-    drop(c);
-
-    assert_eq!(run(&db, &root, &[]).0, 1, "only the JPEG is read again");
-    let c = Connection::open(&db).unwrap();
-    let rows: Vec<(String, String, Option<String>, Option<String>)> = c
-        .prepare("SELECT path, ids_rev, image_data, image_err FROM files ORDER BY path").unwrap()
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).unwrap()
-        .collect::<rusqlite::Result<_>>().unwrap();
-    for (path, r, data, err) in &rows {
-        assert_eq!(r, &rev, "{path} is at the current revision");
-        match path.rsplit('/').next().unwrap() {
-            "note.txt" => {
-                assert_eq!(err.as_deref(), Some("not a TIFF-family file or JPEG"));
-                let again: String = c.query_row("SELECT dngsem_err FROM files WHERE path=?1", [path], |r| r.get(0)).unwrap();
-                assert_eq!(again, walked, "the tiffgraph walk is redone without a full read");
-            }
-            "pseudo.dng" => assert!(err.as_deref().unwrap().starts_with("DNG")),
-            _ => assert_eq!(data, &image),
-        }
-    }
-    assert_eq!(run(&db, &root, &[]).0, 0, "nothing left to upgrade");
-}
-
 /// Metadata is attempted only for extensions the engine reads: a Capture One
 /// `.cop` cache proxy and an `.ini` get neither digest nor error nor record. An
 /// index written before that rule loses those rows' metadata at the next

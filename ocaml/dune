@@ -2,7 +2,7 @@
 (executable
  (name phindex_ox)
  (public_name phindex-ox)
- (libraries phidentify sqlite3 unix)
+ (libraries phidentify sqlite3 unix threads.posix)
  (foreign_stubs
   (language c)
   (names phindex_ox_stubs))

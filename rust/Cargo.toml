@@ -1,6 +1,6 @@
 [package]
 name = "phindex"
-version = "0.2.0"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.99"
 description = "Resumable photo-identity index of a directory tree in SQLite: one binary, N workers, every phidentify identity from one read"
@@ -16,7 +16,7 @@ serde_json = "1.0.151"
 anyhow = "1.0"
 flate2 = "1.1"
 mimalloc = "0.1"
-phidentify = { git = "https://github.com/firstpair/phidentify", rev = "cbcb57776738de10309f44368a970a3752dc1478", features = ["lightroom", "metadata", "semantic"] }
+phidentify = { git = "https://github.com/firstpair/phidentify", rev = "b2a6faefd3c7314358abe970ce4b242801e2e5d2", features = ["lightroom", "metadata", "semantic"] }
 rayon = "1.12"
 rusqlite = { version = "0.41", features = ["bundled"] }
 

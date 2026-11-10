@@ -7,7 +7,11 @@
    Each file read records the phidentify identities and the tiffgraph identity: dngsem_profile (strictest of dng-xmp/0, /1, /2 accepting
    the DNG) and preserved (Semantic Unison's SDE/0-preserved digest of every byte
    outside its XMP packet), and image_data (the stored image bytes of a camera
-   raw, TIFF or JPEG that is not a DNG). Each file read records SHA-256, DNG raw blocks,
+   raw, TIFF or JPEG that is not a DNG), and block_marks (the file's large blocks
+   by length and sampled ends, wherever they sit). The file's skeleton (every
+   byte outside those blocks, packed) is kept in `skeletons` by SHA-256, and a
+   path's earlier contents in `versions`; the Rust phindex's `restore` rebuilds
+   them. Each file read records SHA-256, DNG raw blocks,
    Lightroom's fingerprint (supported DNGs), the metadata digest and compacted
    record, and the tiffgraph identity. A failed or inapplicable identity leaves
    its value NULL and its reason in the _err column. Files are only read. Rows
@@ -47,29 +51,26 @@ CREATE TABLE IF NOT EXISTS runs (root TEXT, started_unix INTEGER, finished_unix 
 CREATE TABLE IF NOT EXISTS metadata (path TEXT PRIMARY KEY, engine TEXT NOT NULL, record_deflate BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS dirs (path TEXT PRIMARY KEY, ino INTEGER NOT NULL, mtime_ns INTEGER NOT NULL,
   seen_unix INTEGER NOT NULL, gone INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS skeletons (sha256 TEXT PRIMARY KEY, record TEXT NOT NULL, skeleton BLOB NOT NULL);
+CREATE TABLE IF NOT EXISTS versions (path TEXT NOT NULL, sha256 TEXT NOT NULL, size INTEGER NOT NULL, mtime_ns INTEGER NOT NULL,
+  replaced_unix INTEGER NOT NULL, PRIMARY KEY (path, sha256, mtime_ns));
 |}
 
 let identity_columns =
   [ "dng_blocks"; "dng_blocks_err"; "lr_digest"; "lr_err"; "md_digest"; "md_err"; "ids_rev";
-    "dngsem_profile"; "dngsem_err"; "preserved"; "preserved_err"; "image_data"; "image_err" ]
+    "dngsem_profile"; "dngsem_err"; "preserved"; "preserved_err"; "image_data"; "image_err";
+    "block_marks"; "block_marks_err" ]
 
 (* The identity definitions rows are stamped with. A row whose ids_rev differs
    is read again, so change this only when an identity's definition changes, not
    for a phidentify release that leaves them alone. Identical in the Rust phindex. *)
-let revision = "phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1"
+let revision = "phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1; block-marks/1"
 
-(* The stamp before image_data. Its rows keep their other identities and are
-   upgraded: a DNG without a read, any other file by its first bytes, and only a
-   file that can have image data (JPEG, TIFF-family, RAF) is read again. *)
-let previous_revision = "phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved"
-
-(* Whether the file's first bytes allow image data; an unreadable file is read in
-   full, so the error is reported. *)
-let image_candidate path =
-  match In_channel.with_open_bin path (fun ic -> In_channel.really_input_string ic Phidentify.image_data_prefix_len) with
-  | Some prefix -> Phidentify.image_data_candidate prefix
-  | None -> (try Phidentify.image_data_candidate (In_channel.with_open_bin path In_channel.input_all) with Sys_error _ -> true)
-  | exception Sys_error _ -> true
+(* The stamp before block_marks and skeletons. Its rows keep their other
+   identities and are upgraded from the file's structures alone: the blocks'
+   ends and the bytes outside them are read, never a whole file. Rows of any
+   older stamp are read again in full. *)
+let previous_revision = "phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1"
 
 (* Refuse a phidentify build without an identity the revision promises. *)
 let check_features () =
@@ -108,7 +109,8 @@ let migrate db =
            CREATE INDEX IF NOT EXISTS files_lr ON files(lr_digest);
            CREATE INDEX IF NOT EXISTS files_md ON files(md_digest);
            CREATE INDEX IF NOT EXISTS files_preserved ON files(preserved);
-           CREATE INDEX IF NOT EXISTS files_image ON files(image_data);"
+           CREATE INDEX IF NOT EXISTS files_image ON files(image_data);
+           CREATE INDEX IF NOT EXISTS files_block_marks ON files(block_marks);"
 
 type ident = { size : int64; mtime_ns : int64; ino : int64 }
 type entry = { path : string; ident : ident; dev : int64 }
@@ -155,15 +157,15 @@ let split = function
   | Ok v -> D.TEXT v, D.NULL
   | Failed e -> D.NULL, D.TEXT e
 
-let progress_line ~t0 ~n ~todo ~bytes ~total ~errors ~counts:(b, l, m, s, i, u) =
+let progress_line ~t0 ~n ~todo ~bytes ~total ~errors ~counts:(b, l, m, s, i, u, k, x) =
   let el = Unix.gettimeofday () -. t0 in
   let rate = Int64.to_float bytes /. Float.max el 1e-9 in
   let eta = if rate > 0. then Int64.to_float (Int64.sub total bytes) /. rate else 0. in
   let e = int_of_float el in
-  Printf.eprintf "+%dh%02dm %d/%d files, %.1f/%.1f GB (%.1f%%), %.0f MB/s, %d errors, ETA %dh%02dm; raw blocks %d, Lightroom %d, metadata %d, preserved %d, image data %d, upgraded unread %d\n%!"
+  Printf.eprintf "+%dh%02dm %d/%d files, %.1f/%.1f GB (%.1f%%), %.0f MB/s, %d errors, ETA %dh%02dm; raw blocks %d, Lightroom %d, metadata %d, preserved %d, image data %d, block marks %d, skeletons %d, upgraded unread %d\n%!"
     (e / 3600) (e mod 3600 / 60) n todo (Int64.to_float bytes /. 1e9) (Int64.to_float total /. 1e9)
     (100. *. Int64.to_float bytes /. Float.max 1. (Int64.to_float total)) (rate /. 1e6) errors
-    (int_of_float eta / 3600) (int_of_float eta mod 3600 / 60) b l m s i u
+    (int_of_float eta / 3600) (int_of_float eta mod 3600 / 60) b l m s i x k u
 
 (* The metadata identity applies only to files whose extension the engine
    reads (Phidentify.reads_metadata). Rows written before that rule, for other
@@ -201,12 +203,6 @@ let update ~db_path ~root ~only ~full_stat ~workers ~progress ~batch =
   migrate db;
   let started = now () in
   let lo = scope ^ "/" and hi = scope ^ "0" in
-  let upgraded_dngs =
-    with_stmt db "UPDATE files SET image_data=NULL, image_err=?1, ids_rev=?2 WHERE ids_rev IS ?3
-                  AND sha256 IS NOT NULL AND dng_blocks IS NOT NULL AND path >= ?4 AND path < ?5" (fun st ->
-      run_stmt db st [ D.TEXT Phidentify.image_data_dng; D.TEXT rev; D.TEXT previous_revision; D.TEXT lo; D.TEXT hi ];
-      Sqlite3.changes db) in
-  if upgraded_dngs > 0 then Printf.eprintf "upgrade: %d DNG rows given image_data without a read\n%!" upgraded_dngs;
   let cleared = clear_unread_metadata db lo hi in
   if cleared > 0 then
     Printf.eprintf "upgrade: %d rows of file types the engine does not read: metadata cleared, not attempted\n%!" cleared;
@@ -281,11 +277,16 @@ let update ~db_path ~root ~only ~full_stat ~workers ~progress ~batch =
           List.iter (fun (p, g) -> if not g then moved_from := p :: !moved_from) vanished
         | [] -> ()) fresh_new);
   exec db "BEGIN";
+  (* A path whose content changed keeps its earlier content's identity: with
+     that content's skeleton, it is rebuilt from the file as it is now. *)
+  with_stmt db "INSERT OR IGNORE INTO versions (path, sha256, size, mtime_ns, replaced_unix)
+                SELECT path, sha256, size, mtime_ns, ?2 FROM files WHERE path=?1 AND sha256 IS NOT NULL" (fun st ->
+    List.iter (fun e -> if Hashtbl.mem known e.path then run_stmt db st [ D.TEXT e.path; D.INT seen ]) fresh);
   with_stmt db "INSERT INTO files (path,size,mtime_ns,ino,dev,sha256,hashed_unix,seen_unix,gone) VALUES (?1,?2,?3,?4,?5,NULL,NULL,?6,0)
      ON CONFLICT(path) DO UPDATE SET size=excluded.size, mtime_ns=excluded.mtime_ns, ino=excluded.ino, dev=excluded.dev,
      sha256=NULL, hashed_unix=NULL, seen_unix=excluded.seen_unix, gone=0, dng_blocks=NULL, dng_blocks_err=NULL,
      lr_digest=NULL, lr_err=NULL, md_digest=NULL, md_err=NULL, ids_rev=NULL, dngsem_profile=NULL, dngsem_err=NULL,
-     preserved=NULL, preserved_err=NULL, image_data=NULL, image_err=NULL" (fun st ->
+     preserved=NULL, preserved_err=NULL, image_data=NULL, image_err=NULL, block_marks=NULL, block_marks_err=NULL" (fun st ->
     List.iter (fun e -> run_stmt db st [ D.TEXT e.path; D.INT e.ident.size; D.INT e.ident.mtime_ns; D.INT e.ident.ino;
                                          D.INT e.dev; D.INT seen ]) fresh);
   with_stmt db "DELETE FROM metadata WHERE path=?1" (fun st -> List.iter (fun e -> run_stmt db st [ D.TEXT e.path ]) fresh);
@@ -299,9 +300,10 @@ let update ~db_path ~root ~only ~full_stat ~workers ~progress ~batch =
   with_stmt db "UPDATE dirs SET gone=1 WHERE path=?1" (fun st ->
     Hashtbl.iter (fun d _ -> if not (Hashtbl.mem seen_dirs d) then run_stmt db st [ D.TEXT d ]) dirs_known);
   with_stmt db "UPDATE files SET (sha256, hashed_unix, dng_blocks, dng_blocks_err, lr_digest, lr_err, md_digest, md_err, ids_rev,
-                  dngsem_profile, dngsem_err, preserved, preserved_err, image_data, image_err) =
+                  dngsem_profile, dngsem_err, preserved, preserved_err, image_data, image_err, block_marks, block_marks_err) =
                   (SELECT sha256, hashed_unix, dng_blocks, dng_blocks_err, lr_digest, lr_err, md_digest, md_err, ids_rev,
-                          dngsem_profile, dngsem_err, preserved, preserved_err, image_data, image_err FROM files WHERE path=?2)
+                          dngsem_profile, dngsem_err, preserved, preserved_err, image_data, image_err, block_marks, block_marks_err
+                   FROM files WHERE path=?2)
                   WHERE path=?1" (fun st ->
     Hashtbl.iter (fun p old -> run_stmt db st [ D.TEXT p; D.TEXT old ]) moved);
   with_stmt db "INSERT OR REPLACE INTO metadata SELECT ?1, engine, record_deflate FROM metadata WHERE path=?2" (fun st ->
@@ -312,27 +314,36 @@ let update ~db_path ~root ~only ~full_stat ~workers ~progress ~batch =
   let changed = List.filter (fun e -> not (Hashtbl.mem moved e.path)) changed in
   let todo = Array.of_list changed in
   let total = ref (Array.fold_left (fun a e -> Int64.add a e.ident.size) 0L todo) in
-  (* Unchanged rows of the previous revision: only image_data is missing. *)
+  (* Unchanged rows of the previous revision: only block marks and the skeleton are missing. *)
   let upgrade = Hashtbl.create 1024 in
   Array.iter (fun e -> match Hashtbl.find_opt known e.path with
     | Some (id, _, _) when id = e.ident && Hashtbl.mem upgradable e.path -> Hashtbl.replace upgrade e.path ()
     | _ -> ()) todo;
-  Printf.eprintf "walked %d files under %s, %d to read (%.1f GB; %d of them only to add image_data, by their first bytes unless they can have it), %d moved or renamed (identities kept), %d gone, %d errors, %d workers (%s), identities: %s\n%!"
+  Printf.eprintf "walked %d files under %s, %d to read (%.1f GB; %d of them only for block marks and a skeleton, from their structures), %d moved or renamed (identities kept), %d gone, %d errors, %d workers (%s), identities: %s\n%!"
     (Array.length entries) scope (Array.length todo) (Int64.to_float !total /. 1e9) (Hashtbl.length upgrade) (Hashtbl.length moved)
     (List.length gone) !errors workers Phidentify.backend rev;
   let stored_sha = Hashtbl.create 1024 in
   Array.iter (fun e -> match Hashtbl.find_opt known e.path with
     | Some (id, _, Some sha) when id = e.ident -> Hashtbl.replace stored_sha e.path sha | _ -> ()) todo;
-  let request = { Phidentify.all with compact_record = true } in
+  let request = { Phidentify.all with compact_record = true; skeleton = true } in
   let upd = Sqlite3.prepare db
     "UPDATE files SET sha256=?1, hashed_unix=?2, dng_blocks=?3, dng_blocks_err=?4, lr_digest=?5, lr_err=?6,
      md_digest=?7, md_err=?8, ids_rev=?9, dngsem_profile=?10, dngsem_err=?11, preserved=?12, preserved_err=?13,
-     image_data=?14, image_err=?15 WHERE path=?16" in
-  let not_image = Sqlite3.prepare db "UPDATE files SET image_data=NULL, image_err=?1, ids_rev=?2 WHERE path=?3" in
+     image_data=?14, image_err=?15, block_marks=?16, block_marks_err=?17 WHERE path=?18" in
+  let structures = Sqlite3.prepare db "UPDATE files SET block_marks=?1, block_marks_err=?2, ids_rev=?3 WHERE path=?4" in
+  let skeleton = Sqlite3.prepare db "INSERT OR IGNORE INTO skeletons VALUES (?1,?2,?3)" in
   let meta = Sqlite3.prepare db "INSERT OR REPLACE INTO metadata VALUES (?1,?2,?3)" in
   let t0 = Unix.gettimeofday () and last = ref (Unix.gettimeofday ()) in
   let n = ref 0 and hashed = ref 0 and bytes = ref 0L and sha_changed = ref 0 in
-  let cb = ref 0 and cl = ref 0 and cm = ref 0 and cs = ref 0 and ci = ref 0 and cu = ref 0 in
+  let cb = ref 0 and cl = ref 0 and cm = ref 0 and cs = ref 0 and ci = ref 0 and cu = ref 0 and ck = ref 0 and cx = ref 0 in
+  (* A file without a skeleton (no walker and over the whole-file limit) stores
+     none; a skeleton that cannot be packed fails the file. *)
+  let keep sha = function
+    | Some (Ok (st : Phidentify.stored)) ->
+      run_stmt db skeleton [ D.TEXT sha; D.TEXT st.record; D.BLOB st.packed ]; incr ck
+    | _ -> () in
+  let unchanged (e : entry) = match lstat e.path with
+    | Some (false, size, mtime_ns, ino, _) -> { size; mtime_ns; ino } = e.ident | _ -> false in
   let since_commit = ref 0 in
   exec db "BEGIN";
   let count r = function Phidentify.Ok _ -> incr r | _ -> () in
@@ -341,21 +352,38 @@ let update ~db_path ~root ~only ~full_stat ~workers ~progress ~batch =
   while !i < len do
     let chunk = Array.sub todo !i (min batch (len - !i)) in
     i := !i + Array.length chunk;
-    (* Upgraded rows whose first bytes rule out image data are settled without a read. *)
-    let chunk = Array.of_list (List.filter (fun e ->
-      if Hashtbl.mem upgrade e.path && not (image_candidate e.path) then begin
-        run_stmt db not_image [ D.TEXT Phidentify.image_data_not_applicable; D.TEXT rev; D.TEXT e.path ];
-        incr n; incr since_commit; incr cu; total := Int64.sub !total e.ident.size;
-        false
-      end else true) (Array.to_list chunk)) in
+    (* Upgraded rows are settled from their structures, on [workers] threads:
+       the stub releases the runtime lock while it reads and packs. *)
+    let upgraded, chunk = List.partition (fun e -> Hashtbl.mem upgrade e.path) (Array.to_list chunk) in
+    let upgraded = Array.of_list upgraded and chunk = Array.of_list chunk in
+    let settled = Array.make (Array.length upgraded) None in
+    let next = Atomic.make 0 in
+    let work () =
+      let rec loop () =
+        let k = Atomic.fetch_and_add next 1 in
+        if k < Array.length upgraded then begin
+          let e = upgraded.(k) in
+          settled.(k) <- Some (Phidentify.skeleton ~sha256:(Hashtbl.find stored_sha e.path) e.path);
+          loop ()
+        end in
+      loop () in
+    List.iter Thread.join (List.init (min workers (Array.length upgraded)) (fun _ -> Thread.create work ()));
+    Array.iteri (fun k e ->
+      incr n; incr since_commit;
+      match settled.(k) with
+      | Some (marks, stored) when unchanged e ->
+        let k, ke = split marks in
+        count cx marks;
+        run_stmt db structures [ k; ke; D.TEXT rev; D.TEXT e.path ];
+        keep (Hashtbl.find stored_sha e.path) stored;
+        incr cu; total := Int64.sub !total e.ident.size
+      | _ -> incr errors; if !errors <= 50 then Printf.eprintf "ERROR %s: changed since the walk\n%!" e.path) upgraded;
     let results = Phidentify.identify_all ~request ~workers (Array.to_list (Array.map (fun e -> e.path) chunk)) in
     List.iteri (fun k r ->
       let e = chunk.(k) in
       incr n; incr since_commit;
-      let unchanged () = match lstat e.path with
-        | Some (false, size, mtime_ns, ino, _) -> { size; mtime_ns; ino } = e.ident | _ -> false in
       match r with
-      | Ok (id : Phidentify.identity) when unchanged () ->
+      | Ok (id : Phidentify.identity) when unchanged e ->
         (match Hashtbl.find_opt stored_sha e.path with
          | Some old when old <> id.sha256 ->
            incr sha_changed; incr errors;
@@ -363,8 +391,12 @@ let update ~db_path ~root ~only ~full_stat ~workers ~progress ~batch =
          | _ -> ());
         let b, be = split id.dng_raw_blocks and l, le = split id.lightroom and m, me = split id.metadata in
         let s, se = split id.dng_semantic and p, pe = split id.preserved and im, ie = split id.image_data in
+        let k, ke = split id.block_marks in
         count cb id.dng_raw_blocks; count cl id.lightroom; count cm id.metadata; count cs id.preserved; count ci id.image_data;
-        run_stmt db upd [ D.TEXT id.sha256; D.INT (now ()); b; be; l; le; m; me; D.TEXT rev; s; se; p; pe; im; ie; D.TEXT e.path ];
+        count cx id.block_marks;
+        run_stmt db upd [ D.TEXT id.sha256; D.INT (now ()); b; be; l; le; m; me; D.TEXT rev; s; se; p; pe; im; ie; k; ke;
+                          D.TEXT e.path ];
+        keep id.sha256 id.skeleton;
         Option.iter (fun json -> run_stmt db meta [ D.TEXT e.path; D.TEXT engine; D.BLOB (deflate json) ]) id.metadata_record;
         incr hashed; bytes := Int64.add !bytes e.ident.size
       | Ok _ ->
@@ -374,17 +406,18 @@ let update ~db_path ~root ~only ~full_stat ~workers ~progress ~batch =
     if !since_commit >= 500 then begin exec db "COMMIT"; exec db "BEGIN"; since_commit := 0 end;
     if Unix.gettimeofday () -. !last >= progress then begin
       last := Unix.gettimeofday ();
-      progress_line ~t0 ~n:!n ~todo:len ~bytes:!bytes ~total:!total ~errors:!errors ~counts:(!cb, !cl, !cm, !cs, !ci, !cu)
+      progress_line ~t0 ~n:!n ~todo:len ~bytes:!bytes ~total:!total ~errors:!errors ~counts:(!cb, !cl, !cm, !cs, !ci, !cu, !ck, !cx)
     end
   done;
   exec db "COMMIT";
-  ignore (Sqlite3.finalize upd); ignore (Sqlite3.finalize meta); ignore (Sqlite3.finalize not_image);
+  ignore (Sqlite3.finalize upd); ignore (Sqlite3.finalize meta); ignore (Sqlite3.finalize structures);
+  ignore (Sqlite3.finalize skeleton);
   with_stmt db "INSERT INTO runs VALUES (?1,?2,?3,?4,?5,?6,?7,?8)" (fun st ->
     run_stmt db st [ D.TEXT scope; D.INT started; D.INT (now ()); D.INT (Int64.of_int (Array.length entries));
                      D.INT (Int64.of_int !hashed); D.INT !bytes; D.INT (Int64.of_int (List.length gone));
                      D.INT (Int64.of_int !errors) ]);
-  Printf.eprintf "done: read %d files, %.1f GB, %d errors (%d stored SHA-256 mismatches); raw blocks %d, Lightroom %d, metadata %d, preserved %d, image data %d; upgraded without a read %d\n%!"
-    !hashed (Int64.to_float !bytes /. 1e9) !errors !sha_changed !cb !cl !cm !cs !ci !cu;
+  Printf.eprintf "done: read %d files, %.1f GB, %d errors (%d stored SHA-256 mismatches); raw blocks %d, Lightroom %d, metadata %d, preserved %d, image data %d, block marks %d, skeletons %d; upgraded without a read %d\n%!"
+    !hashed (Int64.to_float !bytes /. 1e9) !errors !sha_changed !cb !cl !cm !cs !ci !cx !ck !cu;
   ignore (Sqlite3.db_close db)
 
 let () =

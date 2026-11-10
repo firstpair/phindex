@@ -139,6 +139,13 @@ fn aligned_units_are_renamed_in_place_and_back() {
         assert!(skipped.lines().any(|l| l == line), "{line} in {skipped}");
     }
     assert_eq!(skipped.lines().count(), 6, "{skipped}");
+    // A trial plan stops before the unit that would pass the limit: units 9 and 1 have four files, unit 2 two more.
+    let (trial, _) = ok(&["conform", "plan", "--report", &t.s("report"), "--db", &t.s("r.sqlite"), "--out", &t.s("trial"), "--limit", "5"]);
+    let trial: serde_json::Value = serde_json::from_str(&trial).unwrap();
+    assert_eq!((trial["files_to_rename"].as_u64(), trial["units_to_rename"].as_u64(), trial["stopped_at_the_limit"].as_bool()),
+               (Some(4), Some(2), Some(true)), "{trial}");
+    assert_eq!(fs::read_to_string(t.base.join("trial/plan.tsv")).unwrap().lines().count(), 2 + 4);
+    assert_eq!(summary["stopped_at_the_limit"].as_bool(), Some(false));
     // A plan touches nothing, and is not overwritten.
     assert!(t.r.join("t1/IMG_1.RW2").exists() && !t.r.join("new").exists());
     assert!(!phindex(&["conform", "plan", "--report", &t.s("report"), "--db", &t.s("r.sqlite"), "--out", &t.s("plan")]).status.success());

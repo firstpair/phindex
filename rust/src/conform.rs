@@ -1,7 +1,7 @@
 //! `phindex conform`: give the aligned files of a tree the names they have in
 //! another, by renaming them in place.
 //!
-//!   phindex conform plan  --report REPORT_DIR --db RIGHT.sqlite --out PLAN_DIR
+//!   phindex conform plan  --report REPORT_DIR --db RIGHT.sqlite --out PLAN_DIR [--limit N]
 //!   phindex conform apply --plan PLAN_DIR/plan.tsv --db RIGHT.sqlite [--journal FILE]
 //!   phindex conform undo  --journal FILE --db RIGHT.sqlite
 //!
@@ -22,6 +22,11 @@
 //! last test, so a plan is safe on a case-insensitive volume. A destination
 //! held by a file that is itself renamed away becomes free on the next round:
 //! index, align and plan again.
+//!
+//! With `--limit N` the plan stops before the unit that would take it past N
+//! files, for a trial on a few units. Units stay whole, so it may hold fewer
+//! than N files; the units after that point are neither planned nor listed
+//! as skipped.
 //!
 //! `apply` renames, never copies: a file's bytes, inode and times are as
 //! before, so only its name changes. A unit is renamed whole or not at all.
@@ -46,7 +51,7 @@ use std::time::Instant;
 
 const PLAN: &str = "phindex-conform-plan";
 const JOURNAL: &str = "phindex-conform-journal";
-const USAGE: &str = "usage: phindex conform plan --report REPORT_DIR --db RIGHT.sqlite --out PLAN_DIR\n       \
+const USAGE: &str = "usage: phindex conform plan --report REPORT_DIR --db RIGHT.sqlite --out PLAN_DIR [--limit N]\n       \
                      phindex conform apply --plan PLAN.tsv --db RIGHT.sqlite [--journal FILE]\n       \
                      phindex conform undo --journal FILE --db RIGHT.sqlite";
 
@@ -81,6 +86,7 @@ fn fields(line: &str, n: usize, file: &str) -> Result<Vec<String>> {
 
 fn plan(args: &[String]) -> Result<()> {
     let (report, db, out) = (need(args, "--report")?, need(args, "--db")?, need(args, "--out")?);
+    let limit: Option<u64> = get(args, "--limit").map(|n| n.parse().context("--limit takes a number of files")).transpose()?;
     let read = |name: &str| fs::read_to_string(Path::new(&report).join(name)).with_context(|| format!("{report}/{name}: not an align report?"));
     let summary: serde_json::Value = serde_json::from_str(&read("summary.json")?)?;
     let root = summary["right"]["root"].as_str().context("summary.json names no right root")?.to_string();
@@ -147,6 +153,7 @@ fn plan(args: &[String]) -> Result<()> {
     writeln!(skipped_tsv, "left_unit\tright_unit\treason\tfiles")?;
     let (mut from_taken, mut to_taken): (HashSet<String>, HashSet<String>) = (HashSet::new(), HashSet::new());
     let (mut n_units, mut n_files, mut in_place) = (0u64, 0u64, 0u64);
+    let mut limited = false;
     let mut by_why: BTreeMap<String, u64> = BTreeMap::new();
     let mut by_reason: BTreeMap<&'static str, u64> = BTreeMap::new();
     for u in &units {
@@ -201,6 +208,11 @@ fn plan(args: &[String]) -> Result<()> {
             writeln!(skipped_tsv, "{left_unit}\t{right_unit}\t{reason}\t{}", moves.len())?;
             continue;
         }
+        // A trial plan: whole units, in the report's order, up to the limit.
+        if limit.is_some_and(|n| n_files + moves.len() as u64 > n) {
+            limited = true;
+            break;
+        }
         let why: Vec<&str> = ["moved", "renamed"].into_iter().filter(|f| has(f)).collect();
         let why = if why.is_empty() { "name".to_string() } else { why.join(",") };
         n_units += 1;
@@ -222,6 +234,8 @@ fn plan(args: &[String]) -> Result<()> {
         "units_to_rename_by_cause": by_why,
         "units_already_in_place": in_place,
         "units_skipped_by_reason": by_reason,
+        "limit": limit,
+        "stopped_at_the_limit": limited,
         "plan": plan_path.to_str(),
     });
     println!("{}", serde_json::to_string_pretty(&out_summary)?);

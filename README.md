@@ -144,7 +144,8 @@ the left, by renaming them in place; nothing is copied or changed:
 ./target/release/phindex conform undo  --journal conform/plan.tsv.journal --db new.sqlite
 ```
 
-`plan` only writes `plan.tsv` and `skipped.tsv`. A unit is renamed whole or not
+`plan` only writes `plan.tsv` and `skipped.tsv`; `--limit N` keeps it to N files
+for a trial. A unit is renamed whole or not
 at all, and is skipped when it is split, has duplicate candidates, shares its
 target, or its new name is taken. `apply` checks every file against the plan,
 journals each rename before making it and moves the index rows along, so the

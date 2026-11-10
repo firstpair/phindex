@@ -804,7 +804,7 @@ An alignment often shows that two trees hold the same pictures under different n
 It works in three steps, each its own command:
 
 ```sh
-phindex conform plan  --report report --db new.sqlite --out conform
+phindex conform plan  --report report --db new.sqlite --out conform [--limit N]
 phindex conform apply --plan conform/plan.tsv --db new.sqlite
 phindex conform undo  --journal conform/plan.tsv.journal --db new.sqlite
 ```
@@ -820,6 +820,8 @@ phindex conform undo  --journal conform/plan.tsv.journal --db new.sqlite
 - A unit whose folder and name agree but whose files differ in a suffix, say `.jpg` against `.JPG`, is listed with the cause `name`.
 
 `plan.tsv` starts with a line naming the root, then has one line per file: the unit, the path now, the path to be, the size, modification time and SHA-256 from the index, and the cause (`moved`, `renamed` or `name`). Paths are relative to the root. `plan` prints a JSON summary on standard output and does not overwrite an existing plan.
+
+For a trial on a few units, `--limit N` stops the plan before the unit that would take it past N files. Units stay whole, so the plan may hold fewer than N files. The units after that point are neither planned nor listed in `skipped.tsv`, and the summary says the plan stopped at the limit. Apply the trial plan, check the result, undo it or keep it, and plan again without the limit; renames already made are then simply in place.
 
 ## Units that are left alone
 
@@ -936,7 +938,7 @@ Built phindex and phindex-ox binaries are therefore covered by the GPL. phindex 
 | `align` | units by folder and name up to the first dot; tiers `identical`, `xmp-only`, `dng-metadata`, `image-metadata`, `lightroom`, `unit-partner` |
 | `align` report | `summary.json` (also on stdout), `units.tsv`, `files.tsv`, `right-only.tsv`, `dng-pairs.tsv`, `image-pairs.tsv`, `partner-pairs.tsv` |
 | `align` progress | stderr: each stage with counts and seconds, a line every 5 s within a stage; names beginning with a dot left out |
-| `conform` | `plan` (report and right index to `plan.tsv`, `skipped.tsv`), `apply` (renames in place, journal `PLAN.journal`, index rows follow), `undo`; whole units only; skips `split`, `duplicates`, `target-shared`, `not-indexed`, `not-in-index`, `destination-taken` |
+| `conform` | `plan` (report and right index to `plan.tsv`, `skipped.tsv`; `--limit N` files for a trial), `apply` (renames in place, journal `PLAN.journal`, index rows follow), `undo`; whole units only; skips `split`, `duplicates`, `target-shared`, `not-indexed`, `not-in-index`, `destination-taken` |
 | Runner | `scripts/phindex-run.sh [--ox] [--log FILE] --db INDEX --root DIR [options]`: this checkout's build, `caffeinate -i`, appended log, one writer per index |
 | Index copies | read closed indexes with `immutable=1`, or copy and set `PRAGMA journal_mode=DELETE` on the copy |
 | OCaml | 5.1 or later: stock OCaml (`Domain.spawn`) or OxCaml (`Domain.Safe.spawn`) |

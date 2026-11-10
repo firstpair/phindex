@@ -1,6 +1,6 @@
 [package]
 name = "phindex"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 rust-version = "1.99"
 description = "Resumable photo-identity index of a directory tree in SQLite: one binary, N workers, every phidentify identity from one read"

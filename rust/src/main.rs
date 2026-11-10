@@ -7,6 +7,8 @@
 //!   phindex align --left A.sqlite --left-root DIR --right B.sqlite --right-root DIR --out REPORT_DIR  (see align.rs)
 //!   phindex versions --db INDEX.sqlite [--path FILE]                                                   (see restore.rs)
 //!   phindex restore --db INDEX.sqlite (--path FILE [--sha256 HEX] | --sha256 HEX) --out FILE [--from EDITED]
+//!   phindex import-skeletons --db INDEX.sqlite --from SKELETONS.sqlite3                                (see import.rs)
+//!   phindex conform plan|apply|undo ...                                                                (see conform.rs)
 //!
 //! Each file read records SHA-256, DNG raw blocks, Lightroom's fingerprint
 //! (supported DNGs), the metadata digest and compacted record, and the tiffgraph
@@ -31,6 +33,7 @@
 //! identified row inherits its identities (moves and renames) without a read.
 
 mod align;
+mod conform;
 mod import;
 mod restore;
 
@@ -555,6 +558,7 @@ fn main() -> Result<()> {
         Some("align") => return align::run(&args[2..]),
         Some("versions") => return restore::versions(&args[2..]),
         Some("restore") => return restore::run(&args[2..]),
+        Some("conform") => return conform::run(&args[2..]),
         Some("import-skeletons") => return import::run(&args[2..]),
         _ => {}
     }

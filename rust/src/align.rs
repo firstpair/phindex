@@ -115,7 +115,7 @@ struct Side {
 }
 
 /// (folder relative to the root, name up to the first dot).
-fn unit_key(rel: &str) -> (String, String) {
+pub(crate) fn unit_key(rel: &str) -> (String, String) {
     let (dir, name) = rel.rsplit_once('/').unwrap_or(("", rel));
     let stem = name.split_once('.').map(|(s, _)| s).unwrap_or(name);
     (dir.to_string(), stem.to_string())

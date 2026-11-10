@@ -132,6 +132,24 @@ Each file's match is its strongest shared identity: SHA-256, then DNG raw blocks
 (with `xmp-only` when the preserved digest is equal too), image data, and
 Lightroom's fingerprint.
 
+
+## Renaming a tree to match another
+
+`phindex conform` gives the right tree's aligned files the names they have on
+the left, by renaming them in place; nothing is copied or changed:
+
+```sh
+./target/release/phindex conform plan  --report report/ --db new.sqlite --out conform/
+./target/release/phindex conform apply --plan conform/plan.tsv --db new.sqlite
+./target/release/phindex conform undo  --journal conform/plan.tsv.journal --db new.sqlite
+```
+
+`plan` only writes `plan.tsv` and `skipped.tsv`. A unit is renamed whole or not
+at all, and is skipped when it is split, has duplicate candidates, shares its
+target, or its new name is taken. `apply` checks every file against the plan,
+journals each rename before making it and moves the index rows along, so the
+next run reads nothing again. `undo` replays the journal backwards.
+
 ## Queries
 
 ```sql
@@ -160,5 +178,5 @@ SELECT a.path, b.path FROM files a JOIN files b
 
 The phindex source is MIT. The binaries link rawler (LGPL-2.1), for the Lightroom
 fingerprint, and exiftool-rs (GPL-3.0-or-later), for metadata, so built binaries
-are covered by the GPL. phindex only reads the indexed tree; it writes only its
-SQLite file.
+are covered by the GPL. phindex reads the indexed tree and writes its SQLite file;
+only `conform` changes the tree, by renaming.

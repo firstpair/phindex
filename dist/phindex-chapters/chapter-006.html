@@ -195,8 +195,40 @@ rate an index of 1.7 million files is upgraded in about six hours.</p>
 <p>The upgrade covers only that one previous stamp. A row with any older
 stamp, such as one written before <code>image_data</code>, is read in
 full.</p>
-<h2 data-number="5.4" id="the-quick-walk"><span
-class="header-section-number">5.4</span> The quick walk</h2>
+<h2 data-number="5.4"
+id="skeletons-from-a-store-that-already-has-them"><span
+class="header-section-number">5.4</span> Skeletons from a store that
+already has them</h2>
+<p>The upgrade above opens every file. When a <a
+href="https://firstpair.org/books/dng-compare/">DNG Compare</a> archive
+already keeps skeletons of the same contents, they can be copied
+instead, and no file of the tree is opened:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> import-skeletons <span class="at">--db</span> archive.sqlite <span class="at">--from</span> /Volumes/Backup/dngc/Archive/skeletons/skeletons.sqlite3</span></code></pre></div>
+<p>For each row at the previous revision whose SHA-256 the store has,
+this copies the skeleton, computes <code>block_marks</code> from its
+block list, and stamps the row as current. A row says which content it
+was hashed from, and the skeleton is of that content, so the file is not
+needed. The result is what an upgrade from the files writes: phidentify
+cuts files by the archive format’s rules and both tools pack skeletons
+with the same compressor, and a test holds the imported rows equal to
+the indexer’s own, record and bytes.</p>
+<ul>
+<li><strong>What it leaves.</strong> A row whose content the store does
+not have stays at the previous revision, and the next ordinary run
+upgrades it from its file. That is every file the archive never used as
+a reference, and every file changed since.</li>
+<li><strong>What it checks.</strong> Each skeleton’s bytes are checked
+against the SHA-256 in its own record, and its blocks for order, before
+it is copied. One that fails is reported and not imported.</li>
+<li><strong>What it reads and writes.</strong> The store is opened
+read-only and immutable. Only the index is written. Another index’s
+<code>skeletons</code> table serves as a store too, so one index can be
+filled from another.</li>
+</ul>
+<p>Stop any indexer writing the same index first, as for any second
+writer.</p>
+<h2 data-number="5.5" id="the-quick-walk"><span
+class="header-section-number">5.5</span> The quick walk</h2>
 <p>A directory’s mtime changes whenever an entry is added to it, removed
 from it or renamed in it. phindex uses that. Every directory it visits
 is stored in <code>dirs</code> with its inode and mtime. On a rerun, for
@@ -223,8 +255,8 @@ than the directory’s, so the next run lists it again.</p>
 <p>Symbolic links are not followed, and only directories and regular
 files are indexed. A name that is not valid UTF-8 cannot be stored as
 SQLite TEXT; it is skipped and counted as an error.</p>
-<h2 data-number="5.5" id="in-place-rewrites-and---full-stat"><span
-class="header-section-number">5.5</span> In-place rewrites and
+<h2 data-number="5.6" id="in-place-rewrites-and---full-stat"><span
+class="header-section-number">5.6</span> In-place rewrites and
 <code>--full-stat</code></h2>
 <p>The quick walk trusts a directory’s mtime to say whether anything in
 it changed. That holds for every change to the directory’s
@@ -242,8 +274,8 @@ file, not one read: on a large tree, minutes rather than seconds, and
 still nothing like reading the files.</p>
 <p>Programs that save by writing a new file and renaming it over the old
 one change the directory’s mtime, and the quick walk finds them.</p>
-<h2 data-number="5.6" id="only"><span
-class="header-section-number">5.6</span> <code>--only</code></h2>
+<h2 data-number="5.7" id="only"><span
+class="header-section-number">5.7</span> <code>--only</code></h2>
 <p><code>--only SUBDIR</code> limits a run to one folder under
 <code>--root</code>, typically one you have just copied in. Only that
 folder is walked; only rows under it are considered for reading or for
@@ -254,7 +286,7 @@ canonicalized.</p>
 turn, in the order given, as if by separate runs one after the other:
 each has its own walk, plan, reading and row in <code>runs</code>. That
 is the way to index several new folders in one command:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> <span class="at">--db</span> archive.sqlite <span class="at">--root</span> /archive <span class="at">--only</span> /archive/2026/card-a <span class="at">--only</span> /archive/2026/card-b</span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> <span class="at">--db</span> archive.sqlite <span class="at">--root</span> /archive <span class="at">--only</span> /archive/2026/card-a <span class="at">--only</span> /archive/2026/card-b</span></code></pre></div>
 <p>The caution goes the other way. <code>--only</code> is a limit for
 one run, not a setting stored in the index. A later run without
 <code>--only</code> walks the whole root, and if the index has never
@@ -266,8 +298,8 @@ every file in it. To keep working on part of a tree, keep passing
 its identities, and its old path is marked gone even though it lies
 outside the folder, because the old path demonstrably no longer
 exists.</p>
-<h2 data-number="5.7" id="moves-and-renames"><span
-class="header-section-number">5.7</span> Moves and renames</h2>
+<h2 data-number="5.8" id="moves-and-renames"><span
+class="header-section-number">5.8</span> Moves and renames</h2>
 <p>Moving or renaming a file within one file system keeps its inode,
 size and mtime. phindex uses that to carry identities across a move
 without reading the file. For each path that is new to the walked scope,
@@ -293,8 +325,8 @@ marked gone is marked gone, so the index never shows two live paths for
 one file that exists once.</p>
 <p>A move across file systems is a copy and a delete. The new file has a
 new inode, so it is read; the old path is marked gone.</p>
-<h2 data-number="5.8" id="gone"><span
-class="header-section-number">5.8</span> Gone</h2>
+<h2 data-number="5.9" id="gone"><span
+class="header-section-number">5.9</span> Gone</h2>
 <p>A path that was in the index under the walked scope and is no longer
 found by the walk is marked <code>gone = 1</code>. Its row and its
 identities stay, because they are evidence: they say what was there.
@@ -308,8 +340,8 @@ away and then moved back, it is marked present again
 (<code>gone = 0</code>) and keeps its identities; a complete row is not
 read again. If it comes back as a different file, with a new inode or a
 new size or mtime, its row is reset and read like any changed file.</p>
-<h2 data-number="5.9" id="commits-interruptions-and-resuming"><span
-class="header-section-number">5.9</span> Commits, interruptions and
+<h2 data-number="5.10" id="commits-interruptions-and-resuming"><span
+class="header-section-number">5.10</span> Commits, interruptions and
 resuming</h2>
 <p>A run has two phases.</p>
 <p><strong>The plan</strong> is committed in one transaction before any
@@ -333,8 +365,8 @@ writes its row in <code>runs</code>.</p>
 <p>One indexer writes an index at a time. Do not run phindex and
 phindex-ox, or two copies of either, against the same database at
 once.</p>
-<h2 data-number="5.10" id="a-file-that-changes-during-the-run"><span
-class="header-section-number">5.10</span> A file that changes during the
+<h2 data-number="5.11" id="a-file-that-changes-during-the-run"><span
+class="header-section-number">5.11</span> A file that changes during the
 run</h2>
 <p>The plan records each file’s size, mtime and inode. After phidentify
 has identified a file, the indexer stats it again. If it is no longer a

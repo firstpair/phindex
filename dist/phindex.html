@@ -5,7 +5,7 @@
   <meta name="generator" content="pandoc 3.12.1" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
-  <meta name="dcterms.date" content="2026-11-10" />
+  <meta name="dcterms.date" content="2026-11-11" />
   <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
   <title>phindex</title>
   <style>
@@ -115,7 +115,7 @@ figcaption { font-size: .88em; font-style: italic; color: #3b5563; margin-top: .
 <p class="subtitle">An index of photo identities that is cheap to
 rerun</p>
 <p class="author">Alexy Khrabrov</p>
-<p class="date">2026-11-10</p>
+<p class="date">2026-11-11</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -227,10 +227,19 @@ alone</a></li>
 <li><a href="#undoing-it" id="toc-undoing-it"><span class="toc-section-number">10.4</span> Undoing it</a></li>
 <li><a href="#what-it-does-not-do" id="toc-what-it-does-not-do"><span class="toc-section-number">10.5</span> What it does not do</a></li>
 </ul></li>
-<li><a href="#feeding-dngc" id="toc-feeding-dngc"><span class="toc-section-number">11</span> Feeding dngc</a></li>
-<li><a href="#testing" id="toc-testing"><span class="toc-section-number">12</span> Testing</a></li>
-<li><a href="#licences" id="toc-licences"><span class="toc-section-number">13</span> Licences</a></li>
-<li><a href="#reference" id="toc-reference"><span class="toc-section-number">14</span> Reference</a></li>
+<li><a href="#setting-aside-what-another-tree-lacks" id="toc-setting-aside-what-another-tree-lacks"><span class="toc-section-number">11</span> Setting aside what another tree
+lacks</a>
+<ul>
+<li><a href="#what-diff-lists" id="toc-what-diff-lists"><span class="toc-section-number">11.1</span> What <code>diff</code>
+lists</a></li>
+<li><a href="#moving-a-list" id="toc-moving-a-list"><span class="toc-section-number">11.2</span> Moving a list</a></li>
+<li><a href="#moving-one-file-or-one-folder" id="toc-moving-one-file-or-one-folder"><span class="toc-section-number">11.3</span> Moving one file or one
+folder</a></li>
+</ul></li>
+<li><a href="#feeding-dngc" id="toc-feeding-dngc"><span class="toc-section-number">12</span> Feeding dngc</a></li>
+<li><a href="#testing" id="toc-testing"><span class="toc-section-number">13</span> Testing</a></li>
+<li><a href="#licences" id="toc-licences"><span class="toc-section-number">14</span> Licences</a></li>
+<li><a href="#reference" id="toc-reference"><span class="toc-section-number">15</span> Reference</a></li>
 </ul>
 </nav>
 <figure>
@@ -241,12 +250,17 @@ alone</a></li>
 <p>This manual is by Alexy Khrabrov, with Claude as co-author. The ideas
 and decisions are Alexy’s; Claude wrote the text and the code with
 him.</p>
-<p>It describes phindex 0.5.0 as of 2026-11-10: the Rust binary
+<p>It describes phindex 0.6.0 as of 2026-11-10: the Rust binary
 <code>phindex</code> and its OCaml counterpart <code>phindex-ox</code>,
 which runs under stock OCaml 5 and under OxCaml. phindex is licensed
 under the MIT License; the binaries link code under other licences, as
 the chapter on licences explains. Its source is at <a href="https://github.com/firstpair/phindex">github.com/firstpair/phindex</a>.</p>
-<p>0.5.0 adds <code>phindex conform</code>, which renames the aligned
+<p>0.6.0 adds <code>phindex diff</code>, which lists the files of one
+tree that are at no path of another, and <code>phindex mv</code>, which
+moves a listed set, a file or a folder with the index following: only
+the index rows by default, the files too with <code>--files</code>.
+Together they set aside what another tree lacks.</p>
+<p>0.5.0 added <code>phindex conform</code>, which renames the aligned
 files of one tree to the names they have in another, in place, with a
 plan to review first, a journal and an undo. It is the first command
 that changes an indexed tree, and it changes only names. It also adds
@@ -629,10 +643,10 @@ Sync without forging their state.</li>
 <h2 data-number="2.6" id="what-it-is-not"><span class="header-section-number">2.6</span> What it is not</h2>
 <ul>
 <li><strong>Not a writer of files.</strong> Indexing, aligning and
-restoring only read the indexed tree and write nothing in it. The one
-command that changes a tree is <code>conform apply</code> (with its
-<code>undo</code>), and it only renames: no file’s content is written,
-replaced or removed.</li>
+restoring only read the indexed tree and write nothing in it. The
+commands that change a tree are <code>conform apply</code> and
+<code>mv --files</code> (with their <code>undo</code>), and they only
+rename: no file’s content is written, replaced or removed.</li>
 <li><strong>Not a synchronizer or a deduplicator.</strong> It tells you
 which files agree on which identity. What to copy, keep or delete is
 your decision, made from queries.</li>
@@ -2031,7 +2045,7 @@ nothing to compare, and so are sidecars, whose differences the metadata
 records already show. To compare and also preserve a whole tree in one
 command, use <code>dngc</code>, as the next chapter describes.</p>
 <h2 data-number="9.8" id="a-worked-example"><span class="header-section-number">9.8</span> A worked example</h2>
-<p>The integration test for <code>align</code>, in <a href="https://github.com/firstpair/phindex/blob/17f38d5a43936a2a42b2f38cddb3de56da1bec0d/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>,
+<p>The integration test for <code>align</code>, in <a href="https://github.com/firstpair/phindex/blob/c5459373553ce62ef5783abdd449f25d37fa4ac4/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>,
 builds two small synthetic trees of minimal RW2 and JPEG files and
 indexes both. The left folder <code>s1</code> holds five raw+JPEG units,
 <code>IMG_1</code> to <code>IMG_5</code>, a lone <code>IMG_6.JPG</code>,
@@ -2143,7 +2157,7 @@ tree’s aligned files the names they have on the left, by renaming them
 in place. It never copies or changes a file, so a tree of a million
 files is conformed without reading one.</p>
 <p>It works in three steps, each its own command:</p>
-<div class="sourceCode" id="cb25"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> conform plan  <span class="at">--report</span> report <span class="at">--db</span> new.sqlite <span class="at">--out</span> conform</span>
+<div class="sourceCode" id="cb25"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> conform plan  <span class="at">--report</span> report <span class="at">--db</span> new.sqlite <span class="at">--out</span> conform [--limit N]</span>
 <span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> conform apply <span class="at">--plan</span> conform/plan.tsv <span class="at">--db</span> new.sqlite</span>
 <span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> conform undo  <span class="at">--journal</span> conform/plan.tsv.journal <span class="at">--db</span> new.sqlite</span></code></pre></div>
 <p><code>--report</code> is a report of <code>phindex align</code> whose
@@ -2172,6 +2186,13 @@ modification time and SHA-256 from the index, and the cause
 (<code>moved</code>, <code>renamed</code> or <code>name</code>). Paths
 are relative to the root. <code>plan</code> prints a JSON summary on
 standard output and does not overwrite an existing plan.</p>
+<p>For a trial on a few units, <code>--limit N</code> stops the plan
+before the unit that would take it past N files. Units stay whole, so
+the plan may hold fewer than N files. The units after that point are
+neither planned nor listed in <code>skipped.tsv</code>, and the summary
+says the plan stopped at the limit. Apply the trial plan, check the
+result, undo it or keep it, and plan again without the limit; renames
+already made are then simply in place.</p>
 <h2 data-number="10.2" id="units-that-are-left-alone"><span class="header-section-number">10.2</span> Units that are left alone</h2>
 <p>A unit is renamed only when the rename is plainly safe. Otherwise it
 is listed in <code>skipped.tsv</code> with a reason, and none of its
@@ -2236,7 +2257,10 @@ after finishing the others.</p>
 before the rename is made. The journal is <code>PLAN.journal</code>
 beside the plan unless <code>--journal</code> names another file.
 Folders that do not exist are created and noted in the journal. Folders
-left empty are not removed.</p>
+left empty are not removed, unless <code>--prune-empty</code> is given:
+then <code>apply</code> removes the folders its renames emptied, and
+their parents while those are empty too, and notes each in the
+journal.</p>
 <p>The index follows: each renamed file’s row, with its metadata record
 and its earlier versions, is moved to the new path with every identity,
 and a row marking an older, vanished file at that path is dropped. The
@@ -2267,7 +2291,144 @@ folders.</li>
 catalog that names the right tree’s files by path has to find them again
 by content; a DNGC archive does so through the index.</li>
 </ul>
-<h1 data-number="11" id="feeding-dngc"><span class="header-section-number">11</span> Feeding dngc</h1>
+<h1 data-number="11" id="setting-aside-what-another-tree-lacks"><span class="header-section-number">11</span> Setting aside what another tree
+lacks</h1>
+<p><code>conform</code> gives aligned files the same names in two trees.
+What is left is the files one tree has that the other does not: copies
+kept under a second name, sidecars the other side never had, pictures
+that were never brought over. <code>phindex diff</code> lists them, and
+<code>phindex mv</code> moves a listed set to another folder with the
+index following, so that what stays is a subset of the other tree.</p>
+<div class="sourceCode" id="cb26"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> diff <span class="at">--left</span> new.sqlite <span class="at">--left-root</span> /new/foto <span class="at">--right</span> old.sqlite <span class="at">--right-root</span> /old/foto <span class="at">--out</span> diff</span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> mv <span class="at">--db</span> new.sqlite <span class="at">--files</span> <span class="at">--list</span> diff/diff.tsv <span class="at">--to</span> /new/review</span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> mv undo <span class="at">--journal</span> diff/diff.tsv.journal <span class="at">--db</span> new.sqlite</span></code></pre></div>
+<h2 data-number="11.1" id="what-diff-lists"><span class="header-section-number">11.1</span> What <code>diff</code>
+lists</h2>
+<p><code>diff</code> reads the two indexes and opens no file. It gives
+every file under the left root one state:</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>State</th>
+<th>The right tree has</th>
+<th>Aligned</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>same</code></td>
+<td>the same relative path and the same bytes</td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>same-image</code></td>
+<td>the same path, other bytes, the same raw blocks or image data</td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>changed</code></td>
+<td>the same path, other bytes, no shared image identity</td>
+<td></td>
+</tr>
+<tr>
+<td><code>unread</code></td>
+<td>the same path, but one of the two rows is not read yet</td>
+<td></td>
+</tr>
+<tr>
+<td><code>copy</code></td>
+<td>no such path; the same bytes somewhere else</td>
+<td></td>
+</tr>
+<tr>
+<td><code>variant</code></td>
+<td>no such path; the same raw blocks or image data somewhere else</td>
+<td></td>
+</tr>
+<tr>
+<td><code>only-left</code></td>
+<td>no such path, and nothing with its content</td>
+<td></td>
+</tr>
+<tr>
+<td><code>unknown</code></td>
+<td>no such path, and the left row is not read yet</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><code>diff.tsv</code> lists the files in the states named with
+<code>--states</code>. The default is the four states without the path
+on the right, <code>copy,variant,only-left,unknown</code>: once those
+files are moved away, the left tree is a subset of the right one by
+path. A sidecar edited on one side is <code>changed</code>, and so is a
+re-rendered JPEG; they keep their place unless <code>--states</code>
+names <code>changed</code> too.</p>
+<p>The list starts with a line naming the left root, then a header, then
+one line per file: its path relative to the root, state, size,
+modification time and SHA-256. The summary, with files and bytes for
+every state, goes to <code>summary.json</code> and to standard output.
+Read the list before moving anything: the state column says whether a
+file’s content is safe in the other tree (<code>copy</code>), held there
+with other metadata (<code>variant</code>), or held nowhere else
+(<code>only-left</code>). <code>diff</code> does not overwrite an
+existing list.</p>
+<p><code>align</code> and <code>diff</code> answer different questions.
+<code>align</code> asks where each left unit is in the right tree, by
+identity, wherever it sits. <code>diff</code> asks which left files are
+at a path the right tree does not have. Run <code>conform</code> first,
+so that files which only differ in name are renamed rather than set
+aside.</p>
+<h2 data-number="11.2" id="moving-a-list"><span class="header-section-number">11.2</span> Moving a list</h2>
+<p><code>phindex mv --list LIST --to DIR</code> moves every file of the
+list to the same relative path under <code>DIR</code>. The option
+<code>--files</code> decides what is moved:</p>
+<ul>
+<li><strong>Without <code>--files</code>, only the index rows
+move.</strong> That is for files already moved by other means. Each file
+must be at its new path with the size and modification time the index
+has; one that is not is refused and left as it was. <code>--force</code>
+moves its row anyway.</li>
+<li><strong>With <code>--files</code>, the files are moved on disk
+too</strong>, by renaming and never by copying, so <code>DIR</code> must
+be on the same volume. A file already at its new path is recognised and
+only its row moves.</li>
+</ul>
+<p>Each file is checked first, as in <code>conform apply</code>: it must
+still have the size and modification time of the list, its destination
+must be free, and the index must list it as the list does. A file that
+fails a check is reported and left; the command finishes the others and
+then exits with an error. With <code>--files</code>, each rename is
+written to the journal (<code>LIST.journal</code> unless
+<code>--journal</code> names another file) before it is made, and
+<code>phindex mv undo</code> replays the journal backwards. The command
+may be run again after an interruption.</p>
+<p>Two more options: <code>--limit N</code> takes only the first N files
+of the list, for a trial, and <code>--prune-empty</code> afterwards
+removes the folders the moves left empty, and their parents while those
+are empty too. Nothing but an empty folder is ever removed, each removal
+is noted in the journal, and <code>undo</code> creates the folders
+again.</p>
+<p>The index rows move with their identities, metadata records and
+earlier versions, so an indexing run over either folder afterwards reads
+nothing again.</p>
+<h2 data-number="11.3" id="moving-one-file-or-one-folder"><span class="header-section-number">11.3</span> Moving one file or one
+folder</h2>
+<div class="sourceCode" id="cb27"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> mv <span class="at">--db</span> new.sqlite <span class="pp">[--</span><span class="ss">files</span><span class="pp">]</span> <span class="pp">[--</span><span class="ss">force</span><span class="pp">]</span> SRC DST</span></code></pre></div>
+<p>This moves one file, or a folder with everything under it, with the
+same meaning of <code>--files</code> and <code>--force</code>.
+<code>DST</code> is the whole new path, not a folder to move into, and
+it must not exist: a folder is moved by one rename and is never merged
+into another. Without <code>--files</code>, every file under the folder
+must already be at its new path, or nothing is changed. There is no
+journal for this form; the same command with the paths exchanged takes
+it back.</p>
+<h1 data-number="12" id="feeding-dngc"><span class="header-section-number">12</span> Feeding dngc</h1>
 <p><a href="https://firstpair.org/books/dng-compare/">DNG Compare</a>
 keeps one tree, the left, as a byte-for-byte archive of deltas against
 another, the right, with a searchable metadata section. Its unified
@@ -2276,8 +2437,8 @@ from phindex indexes, so that a tree of a million files is archived
 without reading most of it. This chapter covers only what
 <code>dngc</code> takes from phindex; the archive itself, its layout,
 verification and restore are in DNG Compare’s manual.</p>
-<div class="sourceCode" id="cb26"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="ex">dngc</span> run /Volumes/Archive/2026 /Volumes/Backup/2026 /Volumes/Backup/dngc-2026 <span class="dt">\</span></span>
-<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--index</span> archive.sqlite backup.sqlite <span class="at">--metadata</span> phindex</span></code></pre></div>
+<div class="sourceCode" id="cb28"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="ex">dngc</span> run /Volumes/Archive/2026 /Volumes/Backup/2026 /Volumes/Backup/dngc-2026 <span class="dt">\</span></span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--index</span> archive.sqlite backup.sqlite <span class="at">--metadata</span> phindex</span></code></pre></div>
 <p>The first two arguments are the left and right roots, the third the
 archive, which lies outside both, and <code>--index</code> names the
 phindex indexes of the left and the right tree, in that order. Both
@@ -2342,8 +2503,8 @@ folder or switched out of WAL mode. With <code>--pairs FILE</code>,
 file instead of running <code>align</code>; <code>dng-pairs.tsv</code>
 and <code>image-pairs.tsv</code> are such files, and
 <code>partner-pairs.tsv</code>, with its kind column, is not.</p>
-<h1 data-number="12" id="testing"><span class="header-section-number">12</span> Testing</h1>
-<p>The integration tests in <a href="https://github.com/firstpair/phindex/blob/17f38d5a43936a2a42b2f38cddb3de56da1bec0d/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
+<h1 data-number="13" id="testing"><span class="header-section-number">13</span> Testing</h1>
+<p>The integration tests in <a href="https://github.com/firstpair/phindex/blob/c5459373553ce62ef5783abdd449f25d37fa4ac4/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
 run the phindex binary on disposable synthetic trees in a temporary
 directory, with two workers:</p>
 <ul>
@@ -2369,7 +2530,7 @@ file, the SHA-256 is present, the DNG identities are absent, the
 metadata digest is present, the refused grammar leaves a reason in
 <code>dngsem_err</code>, and one metadata record is stored.</li>
 </ul>
-<p>The tests in <a href="https://github.com/firstpair/phindex/blob/17f38d5a43936a2a42b2f38cddb3de56da1bec0d/rust/tests/skeletons.rs"><code>rust/tests/skeletons.rs</code></a>
+<p>The tests in <a href="https://github.com/firstpair/phindex/blob/c5459373553ce62ef5783abdd449f25d37fa4ac4/rust/tests/skeletons.rs"><code>rust/tests/skeletons.rs</code></a>
 build small TIFFs, JPEGs, a sidecar and a file with no walker:</p>
 <ul>
 <li><strong>Block marks and a skeleton per content.</strong> A DNG-like
@@ -2391,7 +2552,7 @@ the previous stamp, with the skeletons deleted, come back with the same
 block marks, reasons, stamp and skeletons, and the run reads nothing in
 full. A row of an older stamp is read again.</li>
 </ul>
-<p>The tests in <a href="https://github.com/firstpair/phindex/blob/17f38d5a43936a2a42b2f38cddb3de56da1bec0d/rust/tests/conform.rs"><code>rust/tests/conform.rs</code></a>
+<p>The tests in <a href="https://github.com/firstpair/phindex/blob/c5459373553ce62ef5783abdd449f25d37fa4ac4/rust/tests/conform.rs"><code>rust/tests/conform.rs</code></a>
 align two trees and conform the right one. The plan holds the moved unit
 with its extra sidecar, the renamed unit whose raw was edited, the
 suffix that differs only in letter case and the unit that belongs in a
@@ -2404,16 +2565,30 @@ second <code>apply</code> and a second <code>undo</code> change nothing,
 and <code>undo</code> restores every name and removes the folders it had
 created. A unit with a file edited after the plan, or with its
 destination taken since, is left whole.</p>
-<p>The test in <a href="https://github.com/firstpair/phindex/blob/17f38d5a43936a2a42b2f38cddb3de56da1bec0d/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>
+<p>The tests in <a href="https://github.com/firstpair/phindex/blob/c5459373553ce62ef5783abdd449f25d37fa4ac4/rust/tests/mv.rs"><code>rust/tests/mv.rs</code></a>
+cover <code>diff</code> and <code>mv</code>. Two trees share one file,
+differ in the metadata of a second and in a sidecar, and the left one
+has a copy, a variant and two files of its own at paths the right one
+lacks. <code>diff</code> gives each file its state and lists the four.
+Without <code>--files</code> the list is refused, since no file has been
+moved. With <code>--files</code>, a trial of two and then the rest move
+the files, the emptied folders are removed, the index rows are at the
+new paths, indexing either folder reads nothing, and a second
+<code>diff</code> lists nothing; <code>undo</code> puts everything back.
+A second test moves one file and one folder: rows only after the file
+was moved by hand, rows only by <code>--force</code>, the file too with
+<code>--files</code>, a folder’s subtree by one rename, and a refusal to
+merge into an existing folder.</p>
+<p>The test in <a href="https://github.com/firstpair/phindex/blob/c5459373553ce62ef5783abdd449f25d37fa4ac4/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>
 is the worked example of the previous chapter: it checks every unit’s
 kind, status, flags and target, the tiers of <code>IMG_2</code>, the two
 image pairs, the one partner pair and the right-only units.</p>
-<div class="sourceCode" id="cb27"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> rust <span class="kw">&amp;&amp;</span> <span class="ex">cargo</span> test <span class="at">--release</span></span></code></pre></div>
+<div class="sourceCode" id="cb29"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> rust <span class="kw">&amp;&amp;</span> <span class="ex">cargo</span> test <span class="at">--release</span></span></code></pre></div>
 <p>The equivalence of phindex and phindex-ox rests on comparing their
 databases on the same tree, as in the comparison above. Synthetic tests
 check the indexing logic; they do not survey real camera files, and they
 do not qualify the identities, which phidentify’s manual covers.</p>
-<h1 data-number="13" id="licences"><span class="header-section-number">13</span> Licences</h1>
+<h1 data-number="14" id="licences"><span class="header-section-number">14</span> Licences</h1>
 <p>The phindex source is MIT. The binaries link third-party code under
 other licences, through phidentify:</p>
 <ul>
@@ -2424,8 +2599,9 @@ metadata record, through dng-compare’s FFI crate.</li>
 </ul>
 <p>Built phindex and phindex-ox binaries are therefore covered by the
 GPL. phindex reads the indexed tree and writes its SQLite file; only
-<code>conform</code> changes the tree, by renaming.</p>
-<h1 data-number="14" id="reference"><span class="header-section-number">14</span> Reference</h1>
+<code>conform</code> and <code>mv --files</code> change the tree, by
+renaming.</p>
+<h1 data-number="15" id="reference"><span class="header-section-number">15</span> Reference</h1>
 <table>
 <colgroup>
 <col style="width: 50%" />
@@ -2440,7 +2616,7 @@ GPL. phindex reads the indexed tree and writes its SQLite file; only
 <tbody>
 <tr>
 <td>Version</td>
-<td>0.5.0</td>
+<td>0.6.0</td>
 </tr>
 <tr>
 <td>Revision stamp</td>
@@ -2527,11 +2703,28 @@ a stage; names beginning with a dot left out</td>
 <tr>
 <td><code>conform</code></td>
 <td><code>plan</code> (report and right index to <code>plan.tsv</code>,
-<code>skipped.tsv</code>), <code>apply</code> (renames in place, journal
-<code>PLAN.journal</code>, index rows follow), <code>undo</code>; whole
-units only; skips <code>split</code>, <code>duplicates</code>,
-<code>target-shared</code>, <code>not-indexed</code>,
-<code>not-in-index</code>, <code>destination-taken</code></td>
+<code>skipped.tsv</code>; <code>--limit N</code> files for a trial),
+<code>apply</code> (renames in place, journal <code>PLAN.journal</code>,
+index rows follow), <code>undo</code>; whole units only; skips
+<code>split</code>, <code>duplicates</code>, <code>target-shared</code>,
+<code>not-indexed</code>, <code>not-in-index</code>,
+<code>destination-taken</code></td>
+</tr>
+<tr>
+<td><code>diff</code></td>
+<td>left files by state: <code>same</code>, <code>same-image</code>,
+<code>changed</code>, <code>unread</code>, <code>copy</code>,
+<code>variant</code>, <code>only-left</code>, <code>unknown</code>;
+<code>diff.tsv</code> lists <code>--states</code> (default: the last
+four), <code>summary.json</code></td>
+</tr>
+<tr>
+<td><code>mv</code></td>
+<td><code>SRC DST</code> (a file or a folder’s subtree) or
+<code>--list DIFF.tsv --to DIR</code>; index rows only, or the files too
+with <code>--files</code>; <code>--force</code>, <code>--limit N</code>,
+<code>--prune-empty</code>, <code>--journal FILE</code>;
+<code>mv undo</code></td>
 </tr>
 <tr>
 <td>Runner</td>

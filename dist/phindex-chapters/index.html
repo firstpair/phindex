@@ -5,7 +5,7 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
-  <meta name="dcterms.date" content="2026-11-10" />
+  <meta name="dcterms.date" content="2026-11-11" />
   <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
   <title>phindex</title>
   <style>
@@ -56,7 +56,7 @@
 <p class="subtitle">An index of photo identities that is cheap to
 rerun</p>
 <p class="author">Alexy Khrabrov</p>
-<p class="date">2026-11-10</p>
+<p class="date">2026-11-11</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -292,14 +292,30 @@ class="toc-section-number">10.4</span> Undoing it</a></li>
 id="toc-what-it-does-not-do"><span
 class="toc-section-number">10.5</span> What it does not do</a></li>
 </ul></li>
-<li><a href="chapter-012.html#feeding-dngc" id="toc-feeding-dngc"><span
-class="toc-section-number">11</span> Feeding dngc</a></li>
-<li><a href="chapter-013.html#testing" id="toc-testing"><span
-class="toc-section-number">12</span> Testing</a></li>
-<li><a href="chapter-014.html#licences" id="toc-licences"><span
-class="toc-section-number">13</span> Licences</a></li>
-<li><a href="chapter-015.html#reference" id="toc-reference"><span
-class="toc-section-number">14</span> Reference</a></li>
+<li><a href="chapter-012.html#setting-aside-what-another-tree-lacks"
+id="toc-setting-aside-what-another-tree-lacks"><span
+class="toc-section-number">11</span> Setting aside what another tree
+lacks</a>
+<ul>
+<li><a href="chapter-012.html#what-diff-lists"
+id="toc-what-diff-lists"><span class="toc-section-number">11.1</span>
+What <code>diff</code> lists</a></li>
+<li><a href="chapter-012.html#moving-a-list"
+id="toc-moving-a-list"><span class="toc-section-number">11.2</span>
+Moving a list</a></li>
+<li><a href="chapter-012.html#moving-one-file-or-one-folder"
+id="toc-moving-one-file-or-one-folder"><span
+class="toc-section-number">11.3</span> Moving one file or one
+folder</a></li>
+</ul></li>
+<li><a href="chapter-013.html#feeding-dngc" id="toc-feeding-dngc"><span
+class="toc-section-number">12</span> Feeding dngc</a></li>
+<li><a href="chapter-014.html#testing" id="toc-testing"><span
+class="toc-section-number">13</span> Testing</a></li>
+<li><a href="chapter-015.html#licences" id="toc-licences"><span
+class="toc-section-number">14</span> Licences</a></li>
+<li><a href="chapter-016.html#reference" id="toc-reference"><span
+class="toc-section-number">15</span> Reference</a></li>
 </ul>
 </nav>
 

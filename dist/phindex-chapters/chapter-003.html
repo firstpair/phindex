@@ -5,7 +5,7 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
-  <meta name="dcterms.date" content="2026-11-10" />
+  <meta name="dcterms.date" content="2026-11-11" />
   <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
   <title>What phindex is</title>
   <style>
@@ -499,10 +499,10 @@ Sync without forging their state.</li>
 class="header-section-number">2.6</span> What it is not</h2>
 <ul>
 <li><strong>Not a writer of files.</strong> Indexing, aligning and
-restoring only read the indexed tree and write nothing in it. The one
-command that changes a tree is <code>conform apply</code> (with its
-<code>undo</code>), and it only renames: no file’s content is written,
-replaced or removed.</li>
+restoring only read the indexed tree and write nothing in it. The
+commands that change a tree are <code>conform apply</code> and
+<code>mv --files</code> (with their <code>undo</code>), and they only
+rename: no file’s content is written, replaced or removed.</li>
 <li><strong>Not a synchronizer or a deduplicator.</strong> It tells you
 which files agree on which identity. What to copy, keep or delete is
 your decision, made from queries.</li>

@@ -5,7 +5,7 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
-  <meta name="dcterms.date" content="2026-11-10" />
+  <meta name="dcterms.date" content="2026-11-11" />
   <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
   <title>About this manual</title>
   <style>
@@ -59,13 +59,18 @@ class="header-section-number">1</span> About this manual</h1>
 <p>This manual is by Alexy Khrabrov, with Claude as co-author. The ideas
 and decisions are Alexy’s; Claude wrote the text and the code with
 him.</p>
-<p>It describes phindex 0.5.0 as of 2026-11-10: the Rust binary
+<p>It describes phindex 0.6.0 as of 2026-11-10: the Rust binary
 <code>phindex</code> and its OCaml counterpart <code>phindex-ox</code>,
 which runs under stock OCaml 5 and under OxCaml. phindex is licensed
 under the MIT License; the binaries link code under other licences, as
 the chapter on licences explains. Its source is at <a
 href="https://github.com/firstpair/phindex">github.com/firstpair/phindex</a>.</p>
-<p>0.5.0 adds <code>phindex conform</code>, which renames the aligned
+<p>0.6.0 adds <code>phindex diff</code>, which lists the files of one
+tree that are at no path of another, and <code>phindex mv</code>, which
+moves a listed set, a file or a folder with the index following: only
+the index rows by default, the files too with <code>--files</code>.
+Together they set aside what another tree lacks.</p>
+<p>0.5.0 added <code>phindex conform</code>, which renames the aligned
 files of one tree to the names they have in another, in place, with a
 plan to review first, a journal and an undo. It is the first command
 that changes an indexed tree, and it changes only names. It also adds

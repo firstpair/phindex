@@ -5,9 +5,9 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
-  <meta name="dcterms.date" content="2026-11-10" />
+  <meta name="dcterms.date" content="2026-11-11" />
   <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
-  <title>Testing</title>
+  <title>Feeding dngc</title>
   <style>
     div.sitenav { display: flex; flex-direction: row; flex-wrap: wrap; }
     span.navlink { flex: 1; }
@@ -112,88 +112,88 @@
 </div>
 <div class="sitenav">
 <span class="navlink">
-<span class="navlink-label">Next:</span> <a href="chapter-014.html" accesskey="n" rel="next">Licences</a>
+<span class="navlink-label">Next:</span> <a href="chapter-014.html" accesskey="n" rel="next">Testing</a>
 </span>
 <span class="navlink">
-<span class="navlink-label">Previous:</span> <a href="chapter-012.html" accesskey="p" rel="previous">Feeding dngc</a>
+<span class="navlink-label">Previous:</span> <a href="chapter-012.html" accesskey="p" rel="previous">Setting aside what another tree lacks</a>
 </span>
 </div>
 </nav>
-<h1 data-number="12" id="testing"><span
-class="header-section-number">12</span> Testing</h1>
-<p>The integration tests in <a
-href="https://github.com/firstpair/phindex/blob/17f38d5a43936a2a42b2f38cddb3de56da1bec0d/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
-run the phindex binary on disposable synthetic trees in a temporary
-directory, with two workers:</p>
+<h1 data-number="12" id="feeding-dngc"><span
+class="header-section-number">12</span> Feeding dngc</h1>
+<p><a href="https://firstpair.org/books/dng-compare/">DNG Compare</a>
+keeps one tree, the left, as a byte-for-byte archive of deltas against
+another, the right, with a searchable metadata section. Its unified
+command, <code>dngc</code>, can take both what to pair and the metadata
+from phindex indexes, so that a tree of a million files is archived
+without reading most of it. This chapter covers only what
+<code>dngc</code> takes from phindex; the archive itself, its layout,
+verification and restore are in DNG Compare’s manual.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">dngc</span> run /Volumes/Archive/2026 /Volumes/Backup/2026 /Volumes/Backup/dngc-2026 <span class="dt">\</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--index</span> archive.sqlite backup.sqlite <span class="at">--metadata</span> phindex</span></code></pre></div>
+<p>The first two arguments are the left and right roots, the third the
+archive, which lies outside both, and <code>--index</code> names the
+phindex indexes of the left and the right tree, in that order. Both
+trees should be indexed by a run that has finished.</p>
 <ul>
-<li><strong>Reruns read only what changed.</strong> A first run reads
-six files; an unchanged rerun reads none; a new nested folder is found
-by the quick walk and its one file read; a file rewritten in place is
-not read by the quick walk and is read by <code>--full-stat</code>, with
-a new SHA-256; a deleted file is marked gone and not counted again on
-the next run.</li>
-<li><strong>Moves keep identities, and <code>--only</code> limits the
-walk.</strong> Renaming a folder of three files reads nothing and
-reports three moved and three gone, with the SHA-256 carried to the new
-path. With <code>--only</code> on a new folder, the new file is read and
-a file moved into the folder from outside it is carried, and its old
-path, outside <code>--only</code>, is marked gone. A file moved away and
-then back to its old path, unchanged, is not read and is no longer
-marked gone.</li>
-<li><strong><code>--only</code> may be repeated.</strong> Two new
-folders given as two <code>--only</code> options are both indexed in one
-run.</li>
-<li><strong>Identities are recorded separately.</strong> For a text
-file, the SHA-256 is present, the DNG identities are absent, the
-metadata digest is present, the refused grammar leaves a reason in
-<code>dngsem_err</code>, and one metadata record is stored.</li>
+<li><strong>Pairs from <code>align</code>.</strong> Without
+<code>--pairs</code>, <code>dngc run</code> covers the whole left tree.
+Given <code>--index</code>, it runs <code>phindex align</code> on the
+two indexes into a temporary report and takes its pairs from
+<code>files.tsv</code>: every left file with the right file it matched,
+at any tier, unit partners included. A left file with no match is kept
+as a full copy. <code>dngc</code> finds <code>phindex</code> in the
+<code>PHINDEX</code> environment variable, then in a
+<code>phindex</code> checkout beside its own
+(<code>phindex/rust/target/release/phindex</code>), then on the
+<code>PATH</code>.</li>
+<li><strong>The left tree must be fully indexed.</strong> If
+<code>align</code> reports any left file as <code>not-indexed</code>, or
+if a walk of the left tree finds a file that is in no line of
+<code>files.tsv</code> and whose name does not begin with a dot,
+<code>dngc</code> stops and asks you to index the left tree first. An
+unread right row is not an error, but a left file whose counterpart is
+unread has no match, so it is kept as a full copy; index the right tree
+completely too.</li>
+<li><strong>Dot names are kept, not dropped.</strong> <code>align</code>
+leaves out names beginning with a dot. They may still be unique (an
+editor’s hidden file is still someone’s file), so <code>dngc</code>
+lists them from its own walk and keeps them as full copies. Its walk
+skips only <code>.DS_Store</code> and symbolic links.</li>
+<li><strong>A row counts only while it is current.</strong> Wherever
+<code>dngc</code> uses an index row, it uses it only when the path is in
+<code>files</code>, not gone, with a SHA-256, and the row’s size and
+mtime equal the file’s as it stats it now. Anything else is treated as
+having no row: the file is read.</li>
+<li><strong>Identical pairs are settled without reading.</strong> When a
+pair’s left and right rows are current and have the same SHA-256, the
+comparison is settled as equal and the preservation needs no delta. Such
+pairs are recorded first, in bulk, as reference records (the left file
+is the right file’s bytes), written 5,000 to a transaction, before the
+worker pool takes the rest. No byte of either file is read.</li>
+<li><strong><code>--metadata phindex</code>.</strong> Without it,
+<code>dngc</code> compares metadata by running Perl ExifTool on the
+files. With it, no ExifTool runs: the archive’s metadata section is
+built from the metadata records phindex stored for both sides of each
+pair. Those are exiftool-rs records, stamped
+<code>ExifTool:DngCompareEngine</code>, and a string value over 1 KiB,
+such as an embedded thumbnail or a camera-profile table, is there as
+<code>long-sha256:&lt;hex&gt;:&lt;length&gt;</code>, so the section
+shows that such a value differs but not its content; the bytes
+themselves are in the preserved files. A pair whose rows are not
+current, or that has no record, is written with the reason and not
+compared. An archive whose metadata came from Perl ExifTool is refused,
+since records of different engines are never mixed.
+<code>--metadata phindex</code> requires <code>--index</code>.</li>
 </ul>
-<p>The tests in <a
-href="https://github.com/firstpair/phindex/blob/17f38d5a43936a2a42b2f38cddb3de56da1bec0d/rust/tests/skeletons.rs"><code>rust/tests/skeletons.rs</code></a>
-build small TIFFs, JPEGs, a sidecar and a file with no walker:</p>
-<ul>
-<li><strong>Block marks and a skeleton per content.</strong> A DNG-like
-TIFF and a JPEG get block marks; a sidecar and a large file of another
-format get the reason. Two equal files share one skeleton, the sidecar
-is stored whole, and the large file has none.</li>
-<li><strong>An edited file is restored as it was.</strong> A file is
-rewritten twice with a longer XMP packet. Its block marks stay the same,
-both earlier contents are listed by <code>versions</code>, and
-<code>restore</code> writes each back byte for byte: the latest by path,
-an older one by SHA-256, one found by block marks after the edited file
-moved, and one from a file the index never saw. An existing
-<code>--out</code> is refused.</li>
-<li><strong>A content whose blocks are gone is not restored.</strong>
-After the image data itself is replaced, <code>restore</code> fails,
-names the missing block and leaves nothing behind.</li>
-<li><strong>The upgrade reads no file in full.</strong> Rows set back to
-the previous stamp, with the skeletons deleted, come back with the same
-block marks, reasons, stamp and skeletons, and the run reads nothing in
-full. A row of an older stamp is read again.</li>
-</ul>
-<p>The tests in <a
-href="https://github.com/firstpair/phindex/blob/17f38d5a43936a2a42b2f38cddb3de56da1bec0d/rust/tests/conform.rs"><code>rust/tests/conform.rs</code></a>
-align two trees and conform the right one. The plan holds the moved unit
-with its extra sidecar, the renamed unit whose raw was edited, the
-suffix that differs only in letter case and the unit that belongs in a
-folder not yet there, and skips the split unit, the one with a
-duplicate, the one whose name is taken and the two that share a target.
-After <code>apply</code> the files have the same inodes and index rows
-under their new paths, an indexing run reads nothing and finds nothing
-moved, and a second alignment shows the units under their left names. A
-second <code>apply</code> and a second <code>undo</code> change nothing,
-and <code>undo</code> restores every name and removes the folders it had
-created. A unit with a file edited after the plan, or with its
-destination taken since, is left whole.</p>
-<p>The test in <a
-href="https://github.com/firstpair/phindex/blob/17f38d5a43936a2a42b2f38cddb3de56da1bec0d/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>
-is the worked example of the previous chapter: it checks every unit’s
-kind, status, flags and target, the tiers of <code>IMG_2</code>, the two
-image pairs, the one partner pair and the right-only units.</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> rust <span class="kw">&amp;&amp;</span> <span class="ex">cargo</span> test <span class="at">--release</span></span></code></pre></div>
-<p>The equivalence of phindex and phindex-ox rests on comparing their
-databases on the same tree, as in the comparison above. Synthetic tests
-check the indexing logic; they do not survey real camera files, and they
-do not qualify the identities, which phidentify’s manual covers.</p>
+<p><code>dngc</code> reads the indexes itself with
+<code>immutable=1</code>, and the <code>align</code> it runs opens them
+with a plain read-only open (see <em>Copying an index</em>). Run it only
+while no indexer writes either index, and with the indexes in a writable
+folder or switched out of WAL mode. With <code>--pairs FILE</code>,
+<code>dngc</code> takes <code>LEFT&lt;TAB&gt;RIGHT</code> lines from the
+file instead of running <code>align</code>; <code>dng-pairs.tsv</code>
+and <code>image-pairs.tsv</code> are such files, and
+<code>partner-pairs.tsv</code>, with its kind column, is not.</p>
 </body>
 </html>

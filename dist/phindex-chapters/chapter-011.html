@@ -5,7 +5,7 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
-  <meta name="dcterms.date" content="2026-11-10" />
+  <meta name="dcterms.date" content="2026-11-11" />
   <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
   <title>Renaming a tree to match another</title>
   <style>
@@ -112,7 +112,7 @@
 </div>
 <div class="sitenav">
 <span class="navlink">
-<span class="navlink-label">Next:</span> <a href="chapter-012.html" accesskey="n" rel="next">Feeding dngc</a>
+<span class="navlink-label">Next:</span> <a href="chapter-012.html" accesskey="n" rel="next">Setting aside what another tree lacks</a>
 </span>
 <span class="navlink">
 <span class="navlink-label">Previous:</span> <a href="chapter-010.html" accesskey="p" rel="previous">Aligning two trees</a>
@@ -129,7 +129,7 @@ tree’s aligned files the names they have on the left, by renaming them
 in place. It never copies or changes a file, so a tree of a million
 files is conformed without reading one.</p>
 <p>It works in three steps, each its own command:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> conform plan  <span class="at">--report</span> report <span class="at">--db</span> new.sqlite <span class="at">--out</span> conform</span>
+<div class="sourceCode" id="cb1"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> conform plan  <span class="at">--report</span> report <span class="at">--db</span> new.sqlite <span class="at">--out</span> conform [--limit N]</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> conform apply <span class="at">--plan</span> conform/plan.tsv <span class="at">--db</span> new.sqlite</span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="ex">phindex</span> conform undo  <span class="at">--journal</span> conform/plan.tsv.journal <span class="at">--db</span> new.sqlite</span></code></pre></div>
 <p><code>--report</code> is a report of <code>phindex align</code> whose
@@ -159,6 +159,13 @@ modification time and SHA-256 from the index, and the cause
 (<code>moved</code>, <code>renamed</code> or <code>name</code>). Paths
 are relative to the root. <code>plan</code> prints a JSON summary on
 standard output and does not overwrite an existing plan.</p>
+<p>For a trial on a few units, <code>--limit N</code> stops the plan
+before the unit that would take it past N files. Units stay whole, so
+the plan may hold fewer than N files. The units after that point are
+neither planned nor listed in <code>skipped.tsv</code>, and the summary
+says the plan stopped at the limit. Apply the trial plan, check the
+result, undo it or keep it, and plan again without the limit; renames
+already made are then simply in place.</p>
 <h2 data-number="10.2" id="units-that-are-left-alone"><span
 class="header-section-number">10.2</span> Units that are left alone</h2>
 <p>A unit is renamed only when the rename is plainly safe. Otherwise it
@@ -225,7 +232,10 @@ after finishing the others.</p>
 before the rename is made. The journal is <code>PLAN.journal</code>
 beside the plan unless <code>--journal</code> names another file.
 Folders that do not exist are created and noted in the journal. Folders
-left empty are not removed.</p>
+left empty are not removed, unless <code>--prune-empty</code> is given:
+then <code>apply</code> removes the folders its renames emptied, and
+their parents while those are empty too, and notes each in the
+journal.</p>
 <p>The index follows: each renamed file’s row, with its metadata record
 and its earlier versions, is moved to the new path with every identity,
 and a row marking an older, vanished file at that path is dropped. The

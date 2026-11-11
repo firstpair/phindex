@@ -5,9 +5,9 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Alexy Khrabrov" />
-  <meta name="dcterms.date" content="2026-11-10" />
+  <meta name="dcterms.date" content="2026-11-11" />
   <meta name="description" content="A manual for phindex, which keeps a resumable SQLite index of a directory tree with every phidentify identity taken from one read per file, rereads only what changed, carries identities across moves, aligns one archive with another by identity, and comes as a Rust binary and an OCaml/OxCaml counterpart that write the same index." />
-  <title>Licences</title>
+  <title>Testing</title>
   <style>
     div.sitenav { display: flex; flex-direction: row; flex-wrap: wrap; }
     span.navlink { flex: 1; }
@@ -32,6 +32,71 @@
       margin: 0 0.8em 0.2em -1.6em;
       vertical-align: middle;
     }
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
   </style>
   <link rel="stylesheet" href="book.css" />
 </head>
@@ -47,25 +112,103 @@
 </div>
 <div class="sitenav">
 <span class="navlink">
-<span class="navlink-label">Next:</span> <a href="chapter-015.html" accesskey="n" rel="next">Reference</a>
+<span class="navlink-label">Next:</span> <a href="chapter-015.html" accesskey="n" rel="next">Licences</a>
 </span>
 <span class="navlink">
-<span class="navlink-label">Previous:</span> <a href="chapter-013.html" accesskey="p" rel="previous">Testing</a>
+<span class="navlink-label">Previous:</span> <a href="chapter-013.html" accesskey="p" rel="previous">Feeding dngc</a>
 </span>
 </div>
 </nav>
-<h1 data-number="13" id="licences"><span
-class="header-section-number">13</span> Licences</h1>
-<p>The phindex source is MIT. The binaries link third-party code under
-other licences, through phidentify:</p>
+<h1 data-number="13" id="testing"><span
+class="header-section-number">13</span> Testing</h1>
+<p>The integration tests in <a
+href="https://github.com/firstpair/phindex/blob/c5459373553ce62ef5783abdd449f25d37fa4ac4/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
+run the phindex binary on disposable synthetic trees in a temporary
+directory, with two workers:</p>
 <ul>
-<li><strong>rawler</strong>, under LGPL-2.1, decodes raw samples for the
-Lightroom fingerprint.</li>
-<li><strong>exiftool-rs</strong>, under GPL-3.0-or-later, extracts the
-metadata record, through dng-compare’s FFI crate.</li>
+<li><strong>Reruns read only what changed.</strong> A first run reads
+six files; an unchanged rerun reads none; a new nested folder is found
+by the quick walk and its one file read; a file rewritten in place is
+not read by the quick walk and is read by <code>--full-stat</code>, with
+a new SHA-256; a deleted file is marked gone and not counted again on
+the next run.</li>
+<li><strong>Moves keep identities, and <code>--only</code> limits the
+walk.</strong> Renaming a folder of three files reads nothing and
+reports three moved and three gone, with the SHA-256 carried to the new
+path. With <code>--only</code> on a new folder, the new file is read and
+a file moved into the folder from outside it is carried, and its old
+path, outside <code>--only</code>, is marked gone. A file moved away and
+then back to its old path, unchanged, is not read and is no longer
+marked gone.</li>
+<li><strong><code>--only</code> may be repeated.</strong> Two new
+folders given as two <code>--only</code> options are both indexed in one
+run.</li>
+<li><strong>Identities are recorded separately.</strong> For a text
+file, the SHA-256 is present, the DNG identities are absent, the
+metadata digest is present, the refused grammar leaves a reason in
+<code>dngsem_err</code>, and one metadata record is stored.</li>
 </ul>
-<p>Built phindex and phindex-ox binaries are therefore covered by the
-GPL. phindex reads the indexed tree and writes its SQLite file; only
-<code>conform</code> changes the tree, by renaming.</p>
+<p>The tests in <a
+href="https://github.com/firstpair/phindex/blob/c5459373553ce62ef5783abdd449f25d37fa4ac4/rust/tests/skeletons.rs"><code>rust/tests/skeletons.rs</code></a>
+build small TIFFs, JPEGs, a sidecar and a file with no walker:</p>
+<ul>
+<li><strong>Block marks and a skeleton per content.</strong> A DNG-like
+TIFF and a JPEG get block marks; a sidecar and a large file of another
+format get the reason. Two equal files share one skeleton, the sidecar
+is stored whole, and the large file has none.</li>
+<li><strong>An edited file is restored as it was.</strong> A file is
+rewritten twice with a longer XMP packet. Its block marks stay the same,
+both earlier contents are listed by <code>versions</code>, and
+<code>restore</code> writes each back byte for byte: the latest by path,
+an older one by SHA-256, one found by block marks after the edited file
+moved, and one from a file the index never saw. An existing
+<code>--out</code> is refused.</li>
+<li><strong>A content whose blocks are gone is not restored.</strong>
+After the image data itself is replaced, <code>restore</code> fails,
+names the missing block and leaves nothing behind.</li>
+<li><strong>The upgrade reads no file in full.</strong> Rows set back to
+the previous stamp, with the skeletons deleted, come back with the same
+block marks, reasons, stamp and skeletons, and the run reads nothing in
+full. A row of an older stamp is read again.</li>
+</ul>
+<p>The tests in <a
+href="https://github.com/firstpair/phindex/blob/c5459373553ce62ef5783abdd449f25d37fa4ac4/rust/tests/conform.rs"><code>rust/tests/conform.rs</code></a>
+align two trees and conform the right one. The plan holds the moved unit
+with its extra sidecar, the renamed unit whose raw was edited, the
+suffix that differs only in letter case and the unit that belongs in a
+folder not yet there, and skips the split unit, the one with a
+duplicate, the one whose name is taken and the two that share a target.
+After <code>apply</code> the files have the same inodes and index rows
+under their new paths, an indexing run reads nothing and finds nothing
+moved, and a second alignment shows the units under their left names. A
+second <code>apply</code> and a second <code>undo</code> change nothing,
+and <code>undo</code> restores every name and removes the folders it had
+created. A unit with a file edited after the plan, or with its
+destination taken since, is left whole.</p>
+<p>The tests in <a
+href="https://github.com/firstpair/phindex/blob/c5459373553ce62ef5783abdd449f25d37fa4ac4/rust/tests/mv.rs"><code>rust/tests/mv.rs</code></a>
+cover <code>diff</code> and <code>mv</code>. Two trees share one file,
+differ in the metadata of a second and in a sidecar, and the left one
+has a copy, a variant and two files of its own at paths the right one
+lacks. <code>diff</code> gives each file its state and lists the four.
+Without <code>--files</code> the list is refused, since no file has been
+moved. With <code>--files</code>, a trial of two and then the rest move
+the files, the emptied folders are removed, the index rows are at the
+new paths, indexing either folder reads nothing, and a second
+<code>diff</code> lists nothing; <code>undo</code> puts everything back.
+A second test moves one file and one folder: rows only after the file
+was moved by hand, rows only by <code>--force</code>, the file too with
+<code>--files</code>, a folder’s subtree by one rename, and a refusal to
+merge into an existing folder.</p>
+<p>The test in <a
+href="https://github.com/firstpair/phindex/blob/c5459373553ce62ef5783abdd449f25d37fa4ac4/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>
+is the worked example of the previous chapter: it checks every unit’s
+kind, status, flags and target, the tiers of <code>IMG_2</code>, the two
+image pairs, the one partner pair and the right-only units.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> rust <span class="kw">&amp;&amp;</span> <span class="ex">cargo</span> test <span class="at">--release</span></span></code></pre></div>
+<p>The equivalence of phindex and phindex-ox rests on comparing their
+databases on the same tree, as in the comparison above. Synthetic tests
+check the indexing logic; they do not survey real camera files, and they
+do not qualify the identities, which phidentify’s manual covers.</p>
 </body>
 </html>

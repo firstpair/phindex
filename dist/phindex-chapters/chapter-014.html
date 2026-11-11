@@ -122,7 +122,7 @@
 <h1 data-number="13" id="testing"><span
 class="header-section-number">13</span> Testing</h1>
 <p>The integration tests in <a
-href="https://github.com/firstpair/phindex/blob/c5459373553ce62ef5783abdd449f25d37fa4ac4/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
+href="https://github.com/firstpair/phindex/blob/1b6e940afe9aa284c81da03d9687581eb0f5ee13/rust/tests/incremental.rs"><code>rust/tests/incremental.rs</code></a>
 run the phindex binary on disposable synthetic trees in a temporary
 directory, with two workers:</p>
 <ul>
@@ -149,7 +149,7 @@ metadata digest is present, the refused grammar leaves a reason in
 <code>dngsem_err</code>, and one metadata record is stored.</li>
 </ul>
 <p>The tests in <a
-href="https://github.com/firstpair/phindex/blob/c5459373553ce62ef5783abdd449f25d37fa4ac4/rust/tests/skeletons.rs"><code>rust/tests/skeletons.rs</code></a>
+href="https://github.com/firstpair/phindex/blob/1b6e940afe9aa284c81da03d9687581eb0f5ee13/rust/tests/skeletons.rs"><code>rust/tests/skeletons.rs</code></a>
 build small TIFFs, JPEGs, a sidecar and a file with no walker:</p>
 <ul>
 <li><strong>Block marks and a skeleton per content.</strong> A DNG-like
@@ -172,7 +172,7 @@ block marks, reasons, stamp and skeletons, and the run reads nothing in
 full. A row of an older stamp is read again.</li>
 </ul>
 <p>The tests in <a
-href="https://github.com/firstpair/phindex/blob/c5459373553ce62ef5783abdd449f25d37fa4ac4/rust/tests/conform.rs"><code>rust/tests/conform.rs</code></a>
+href="https://github.com/firstpair/phindex/blob/1b6e940afe9aa284c81da03d9687581eb0f5ee13/rust/tests/conform.rs"><code>rust/tests/conform.rs</code></a>
 align two trees and conform the right one. The plan holds the moved unit
 with its extra sidecar, the renamed unit whose raw was edited, the
 suffix that differs only in letter case and the unit that belongs in a
@@ -185,8 +185,17 @@ second <code>apply</code> and a second <code>undo</code> change nothing,
 and <code>undo</code> restores every name and removes the folders it had
 created. A unit with a file edited after the plan, or with its
 destination taken since, is left whole.</p>
+<p>The test in <a
+href="https://github.com/firstpair/phindex/blob/1b6e940afe9aa284c81da03d9687581eb0f5ee13/rust/tests/adopt.rs"><code>rust/tests/adopt.rs</code></a>
+copies files from one indexed tree into another with their times kept: a
+replacement, two new files and one copy whose time was not kept.
+<code>adopt</code> writes three rows equal to the other index’s in every
+identity, with this tree’s inodes and folder, copies their skeletons,
+lists the replaced content as a version that <code>restore</code>
+rebuilds, and leaves the fourth file; the next ordinary run reads that
+one file only.</p>
 <p>The tests in <a
-href="https://github.com/firstpair/phindex/blob/c5459373553ce62ef5783abdd449f25d37fa4ac4/rust/tests/mv.rs"><code>rust/tests/mv.rs</code></a>
+href="https://github.com/firstpair/phindex/blob/1b6e940afe9aa284c81da03d9687581eb0f5ee13/rust/tests/mv.rs"><code>rust/tests/mv.rs</code></a>
 cover <code>diff</code> and <code>mv</code>. Two trees share one file,
 differ in the metadata of a second and in a sidecar, and the left one
 has a copy, a variant and two files of its own at paths the right one
@@ -201,7 +210,7 @@ was moved by hand, rows only by <code>--force</code>, the file too with
 <code>--files</code>, a folder’s subtree by one rename, and a refusal to
 merge into an existing folder.</p>
 <p>The test in <a
-href="https://github.com/firstpair/phindex/blob/c5459373553ce62ef5783abdd449f25d37fa4ac4/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>
+href="https://github.com/firstpair/phindex/blob/1b6e940afe9aa284c81da03d9687581eb0f5ee13/rust/tests/align.rs"><code>rust/tests/align.rs</code></a>
 is the worked example of the previous chapter: it checks every unit’s
 kind, status, flags and target, the tiers of <code>IMG_2</code>, the two
 image pairs, the one partner pair and the right-only units.</p>

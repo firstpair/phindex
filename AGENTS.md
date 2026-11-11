@@ -11,7 +11,7 @@ Shared rules for every repository under `~/src` are in `~/src/firstpair/AGENTS.m
 - Rows in `skeletons` and `versions` are only ever added. `restore` and `versions`
   open the index read-only (immutable when it is idle) and never write into the
   indexed tree.
-- The indexed tree is only ever read, except by `conform apply` and `conform undo`,
+- The indexed tree is only ever read, except by `conform apply`, `mv --files` and their `undo`,
   which rename files and never write, replace or remove one; keep their checks
   (size and time against the plan, free destination, whole units, journal first).
   `conform` moves a file's `versions` rows to its new path. Tests use disposable synthetic trees, never a

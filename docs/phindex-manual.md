@@ -2,9 +2,11 @@
 
 This manual is by Alexy Khrabrov, with Claude as co-author. The ideas and decisions are Alexy's; Claude wrote the text and the code with him.
 
-It describes phindex 0.5.0 as of 2026-11-10: the Rust binary `phindex` and its OCaml counterpart `phindex-ox`, which runs under stock OCaml 5 and under OxCaml. phindex is licensed under the MIT License; the binaries link code under other licences, as the chapter on licences explains. Its source is at [github.com/firstpair/phindex](https://github.com/firstpair/phindex).
+It describes phindex 0.6.0 as of 2026-11-10: the Rust binary `phindex` and its OCaml counterpart `phindex-ox`, which runs under stock OCaml 5 and under OxCaml. phindex is licensed under the MIT License; the binaries link code under other licences, as the chapter on licences explains. Its source is at [github.com/firstpair/phindex](https://github.com/firstpair/phindex).
 
-0.5.0 adds `phindex conform`, which renames the aligned files of one tree to the names they have in another, in place, with a plan to review first, a journal and an undo. It is the first command that changes an indexed tree, and it changes only names. It also adds `import-skeletons`, which fills an index from a skeleton store without opening a file. The revision stamp is unchanged, so an index written by 0.4.0 is current.
+0.6.0 adds `phindex diff`, which lists the files of one tree that are at no path of another, and `phindex mv`, which moves a listed set, a file or a folder with the index following: only the index rows by default, the files too with `--files`. Together they set aside what another tree lacks.
+
+0.5.0 added `phindex conform`, which renames the aligned files of one tree to the names they have in another, in place, with a plan to review first, a journal and an undo. It is the first command that changes an indexed tree, and it changes only names. It also adds `import-skeletons`, which fills an index from a skeleton store without opening a file. The revision stamp is unchanged, so an index written by 0.4.0 is current.
 
 0.4.0 added one identity and a way back from metadata edits. Every file gets `block_marks`, phidentify's identity of a file's large blocks wherever they sit, and the index keeps a **skeleton** of every content it reads and the SHA-256 of each path's earlier contents. With those, `phindex restore` rebuilds a file as it was before an editor wrote into it, from the edited file. The revision stamp gains `; block-marks/1`. An index written by 0.2.0 or 0.3.0 is upgraded at the next run from each file's structures, without reading any file in full; the earlier one-step upgrade, for indexes written before `image_data`, is gone, and such an index is read again in full.
 
@@ -121,7 +123,7 @@ This book is one of nine on the FirstPair photo tools. Each owns one part, and
 
 ## What it is not
 
-- **Not a writer of files.** Indexing, aligning and restoring only read the indexed tree and write nothing in it. The one command that changes a tree is `conform apply` (with its `undo`), and it only renames: no file's content is written, replaced or removed.
+- **Not a writer of files.** Indexing, aligning and restoring only read the indexed tree and write nothing in it. The commands that change a tree are `conform apply` and `mv --files` (with their `undo`), and they only rename: no file's content is written, replaced or removed.
 - **Not a synchronizer or a deduplicator.** It tells you which files agree on which identity. What to copy, keep or delete is your decision, made from queries.
 - **Not a catalog tool.** It can compare its `lr_digest` column with a Lightroom Classic catalog's stored fingerprints, read from a copy of the catalog. It never opens a live catalog and never writes one.
 - **Not a server.** One indexer, `phindex` or `phindex-ox`, writes an index at a time. Readers can query the index while it runs, because it is in WAL mode.
@@ -842,7 +844,7 @@ Names are compared without regard to letter case for `destination-taken`, so a p
 
 `apply` renames with the system's rename call and never copies. A file keeps its bytes, inode and times; only its name and folder change. A unit is renamed whole or not at all: before any rename of a unit, every file of it must still have the size and modification time of the plan, every destination must be free, and the index must list the files as the plan does. A unit that fails a check is reported, left as it was and counted; `apply` then exits with an error after finishing the others.
 
-Each rename is written to the journal, and the journal to disk, before the rename is made. The journal is `PLAN.journal` beside the plan unless `--journal` names another file. Folders that do not exist are created and noted in the journal. Folders left empty are not removed.
+Each rename is written to the journal, and the journal to disk, before the rename is made. The journal is `PLAN.journal` beside the plan unless `--journal` names another file. Folders that do not exist are created and noted in the journal. Folders left empty are not removed, unless `--prune-empty` is given: then `apply` removes the folders its renames emptied, and their parents while those are empty too, and notes each in the journal.
 
 The index follows: each renamed file's row, with its metadata record and its earlier versions, is moved to the new path with every identity, and a row marking an older, vanished file at that path is dropped. The next indexing run therefore reads nothing again, and reports nothing as moved.
 
@@ -860,6 +862,58 @@ Since a rename changes no content, there is nothing for a skeleton to restore he
 - It does not replace a right file whose content differs from the left one.
 - It does not remove right-only files, duplicates or emptied folders.
 - It does not follow a rename into other records. An archive or catalog that names the right tree's files by path has to find them again by content; a DNGC archive does so through the index.
+
+# Setting aside what another tree lacks
+
+`conform` gives aligned files the same names in two trees. What is left is the files one tree has that the other does not: copies kept under a second name, sidecars the other side never had, pictures that were never brought over. `phindex diff` lists them, and `phindex mv` moves a listed set to another folder with the index following, so that what stays is a subset of the other tree.
+
+```sh
+phindex diff --left new.sqlite --left-root /new/foto --right old.sqlite --right-root /old/foto --out diff
+phindex mv --db new.sqlite --files --list diff/diff.tsv --to /new/review
+phindex mv undo --journal diff/diff.tsv.journal --db new.sqlite
+```
+
+## What `diff` lists
+
+`diff` reads the two indexes and opens no file. It gives every file under the left root one state:
+
+| State | The right tree has | Aligned |
+| --- | --- | --- |
+| `same` | the same relative path and the same bytes | yes |
+| `same-image` | the same path, other bytes, the same raw blocks or image data | yes |
+| `changed` | the same path, other bytes, no shared image identity | |
+| `unread` | the same path, but one of the two rows is not read yet | |
+| `copy` | no such path; the same bytes somewhere else | |
+| `variant` | no such path; the same raw blocks or image data somewhere else | |
+| `only-left` | no such path, and nothing with its content | |
+| `unknown` | no such path, and the left row is not read yet | |
+
+`diff.tsv` lists the files in the states named with `--states`. The default is the four states without the path on the right, `copy,variant,only-left,unknown`: once those files are moved away, the left tree is a subset of the right one by path. A sidecar edited on one side is `changed`, and so is a re-rendered JPEG; they keep their place unless `--states` names `changed` too.
+
+The list starts with a line naming the left root, then a header, then one line per file: its path relative to the root, state, size, modification time and SHA-256. The summary, with files and bytes for every state, goes to `summary.json` and to standard output. Read the list before moving anything: the state column says whether a file's content is safe in the other tree (`copy`), held there with other metadata (`variant`), or held nowhere else (`only-left`). `diff` does not overwrite an existing list.
+
+`align` and `diff` answer different questions. `align` asks where each left unit is in the right tree, by identity, wherever it sits. `diff` asks which left files are at a path the right tree does not have. Run `conform` first, so that files which only differ in name are renamed rather than set aside.
+
+## Moving a list
+
+`phindex mv --list LIST --to DIR` moves every file of the list to the same relative path under `DIR`. The option `--files` decides what is moved:
+
+- **Without `--files`, only the index rows move.** That is for files already moved by other means. Each file must be at its new path with the size and modification time the index has; one that is not is refused and left as it was. `--force` moves its row anyway.
+- **With `--files`, the files are moved on disk too**, by renaming and never by copying, so `DIR` must be on the same volume. A file already at its new path is recognised and only its row moves.
+
+Each file is checked first, as in `conform apply`: it must still have the size and modification time of the list, its destination must be free, and the index must list it as the list does. A file that fails a check is reported and left; the command finishes the others and then exits with an error. With `--files`, each rename is written to the journal (`LIST.journal` unless `--journal` names another file) before it is made, and `phindex mv undo` replays the journal backwards. The command may be run again after an interruption.
+
+Two more options: `--limit N` takes only the first N files of the list, for a trial, and `--prune-empty` afterwards removes the folders the moves left empty, and their parents while those are empty too. Nothing but an empty folder is ever removed, each removal is noted in the journal, and `undo` creates the folders again.
+
+The index rows move with their identities, metadata records and earlier versions, so an indexing run over either folder afterwards reads nothing again.
+
+## Moving one file or one folder
+
+```sh
+phindex mv --db new.sqlite [--files] [--force] SRC DST
+```
+
+This moves one file, or a folder with everything under it, with the same meaning of `--files` and `--force`. `DST` is the whole new path, not a folder to move into, and it must not exist: a folder is moved by one rename and is never merged into another. Without `--files`, every file under the folder must already be at its new path, or nothing is changed. There is no journal for this form; the same command with the paths exchanged takes it back.
 
 # Feeding dngc
 
@@ -899,6 +953,8 @@ The tests in [`rust/tests/skeletons.rs`](../rust/tests/skeletons.rs) build small
 
 The tests in [`rust/tests/conform.rs`](../rust/tests/conform.rs) align two trees and conform the right one. The plan holds the moved unit with its extra sidecar, the renamed unit whose raw was edited, the suffix that differs only in letter case and the unit that belongs in a folder not yet there, and skips the split unit, the one with a duplicate, the one whose name is taken and the two that share a target. After `apply` the files have the same inodes and index rows under their new paths, an indexing run reads nothing and finds nothing moved, and a second alignment shows the units under their left names. A second `apply` and a second `undo` change nothing, and `undo` restores every name and removes the folders it had created. A unit with a file edited after the plan, or with its destination taken since, is left whole.
 
+The tests in [`rust/tests/mv.rs`](../rust/tests/mv.rs) cover `diff` and `mv`. Two trees share one file, differ in the metadata of a second and in a sidecar, and the left one has a copy, a variant and two files of its own at paths the right one lacks. `diff` gives each file its state and lists the four. Without `--files` the list is refused, since no file has been moved. With `--files`, a trial of two and then the rest move the files, the emptied folders are removed, the index rows are at the new paths, indexing either folder reads nothing, and a second `diff` lists nothing; `undo` puts everything back. A second test moves one file and one folder: rows only after the file was moved by hand, rows only by `--force`, the file too with `--files`, a folder's subtree by one rename, and a refusal to merge into an existing folder.
+
 The test in [`rust/tests/align.rs`](../rust/tests/align.rs) is the worked example of the previous chapter: it checks every unit's kind, status, flags and target, the tiers of `IMG_2`, the two image pairs, the one partner pair and the right-only units.
 
 ```sh
@@ -914,13 +970,13 @@ The phindex source is MIT. The binaries link third-party code under other licenc
 - **rawler**, under LGPL-2.1, decodes raw samples for the Lightroom fingerprint.
 - **exiftool-rs**, under GPL-3.0-or-later, extracts the metadata record, through dng-compare's FFI crate.
 
-Built phindex and phindex-ox binaries are therefore covered by the GPL. phindex reads the indexed tree and writes its SQLite file; only `conform` changes the tree, by renaming.
+Built phindex and phindex-ox binaries are therefore covered by the GPL. phindex reads the indexed tree and writes its SQLite file; only `conform` and `mv --files` change the tree, by renaming.
 
 # Reference
 
 | Item | Value |
 | --- | --- |
-| Version | 0.5.0 |
+| Version | 0.6.0 |
 | Revision stamp | `phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1` |
 | Upgraded without a full read | rows of the stamp without `; image-data/1` |
 | Metadata engine label | `exiftool-rs (via phidentify)` |
@@ -939,6 +995,8 @@ Built phindex and phindex-ox binaries are therefore covered by the GPL. phindex 
 | `align` report | `summary.json` (also on stdout), `units.tsv`, `files.tsv`, `right-only.tsv`, `dng-pairs.tsv`, `image-pairs.tsv`, `partner-pairs.tsv` |
 | `align` progress | stderr: each stage with counts and seconds, a line every 5 s within a stage; names beginning with a dot left out |
 | `conform` | `plan` (report and right index to `plan.tsv`, `skipped.tsv`; `--limit N` files for a trial), `apply` (renames in place, journal `PLAN.journal`, index rows follow), `undo`; whole units only; skips `split`, `duplicates`, `target-shared`, `not-indexed`, `not-in-index`, `destination-taken` |
+| `diff` | left files by state: `same`, `same-image`, `changed`, `unread`, `copy`, `variant`, `only-left`, `unknown`; `diff.tsv` lists `--states` (default: the last four), `summary.json` |
+| `mv` | `SRC DST` (a file or a folder's subtree) or `--list DIFF.tsv --to DIR`; index rows only, or the files too with `--files`; `--force`, `--limit N`, `--prune-empty`, `--journal FILE`; `mv undo` |
 | Runner | `scripts/phindex-run.sh [--ox] [--log FILE] --db INDEX --root DIR [options]`: this checkout's build, `caffeinate -i`, appended log, one writer per index |
 | Index copies | read closed indexes with `immutable=1`, or copy and set `PRAGMA journal_mode=DELETE` on the copy |
 | OCaml | 5.1 or later: stock OCaml (`Domain.spawn`) or OxCaml (`Domain.Safe.spawn`) |

@@ -2,7 +2,7 @@
 //! another, by renaming them in place.
 //!
 //!   phindex conform plan  --report REPORT_DIR --db RIGHT.sqlite --out PLAN_DIR [--limit N]
-//!   phindex conform apply --plan PLAN_DIR/plan.tsv --db RIGHT.sqlite [--journal FILE]
+//!   phindex conform apply --plan PLAN_DIR/plan.tsv --db RIGHT.sqlite [--journal FILE] [--prune-empty]
 //!   phindex conform undo  --journal FILE --db RIGHT.sqlite
 //!
 //! `align` says which right unit each left unit corresponds to. Where that
@@ -37,6 +37,10 @@
 //! the next indexing run reads nothing again. `apply` may be run again after
 //! an interruption; renames already made are recognised.
 //!
+//! With `--prune-empty`, `apply` afterwards removes the folders its renames
+//! left empty, and their parents while those are empty too, and notes each in
+//! the journal. Nothing but an empty folder is ever removed.
+//!
 //! `undo` replays the journal backwards with the same checks, moves the index
 //! rows back, and removes the folders `apply` created if they are empty. A
 //! content never changes, so no skeleton is needed to undo a rename.
@@ -49,13 +53,13 @@ use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::time::Instant;
 
-const PLAN: &str = "phindex-conform-plan";
+pub(crate) const PLAN: &str = "phindex-conform-plan";
 const JOURNAL: &str = "phindex-conform-journal";
 const USAGE: &str = "usage: phindex conform plan --report REPORT_DIR --db RIGHT.sqlite --out PLAN_DIR [--limit N]\n       \
-                     phindex conform apply --plan PLAN.tsv --db RIGHT.sqlite [--journal FILE]\n       \
+                     phindex conform apply --plan PLAN.tsv --db RIGHT.sqlite [--journal FILE] [--prune-empty]\n       \
                      phindex conform undo --journal FILE --db RIGHT.sqlite";
 
-fn get(args: &[String], flag: &str) -> Option<String> {
+pub(crate) fn get(args: &[String], flag: &str) -> Option<String> {
     args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned()
 }
 
@@ -76,12 +80,25 @@ fn join(dir: &str, name: &str) -> String {
     if dir.is_empty() { name.to_string() } else { format!("{dir}/{name}") }
 }
 
-fn fields(line: &str, n: usize, file: &str) -> Result<Vec<String>> {
+pub(crate) fn fields(line: &str, n: usize, file: &str) -> Result<Vec<String>> {
     let f: Vec<String> = line.split('\t').map(String::from).collect();
     if f.len() != n {
         bail!("{file}: a line with {} fields where {n} are expected (a name with a tab in it?): {line}", f.len());
     }
     Ok(f)
+}
+
+/// An index, read-only. An idle one is opened immutable, which writes nothing beside it.
+pub(crate) fn open_ro(db: &str) -> Result<Connection> {
+    if !Path::new(db).is_file() {
+        bail!("no index at {db}");
+    }
+    Ok(if Path::new(&format!("{db}-wal")).exists() {
+        Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_ONLY)
+    } else {
+        let real = fs::canonicalize(db)?.to_str().context("non-UTF-8 --db")?.replace('%', "%25").replace('?', "%3f").replace('#', "%23");
+        Connection::open_with_flags(format!("file:{real}?immutable=1"), OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI)
+    }?)
 }
 
 fn plan(args: &[String]) -> Result<()> {
@@ -99,13 +116,7 @@ fn plan(args: &[String]) -> Result<()> {
     }
 
     // The right tree as its index has it now: live paths, and units as align forms them.
-    // An idle index is opened immutable, which writes nothing beside it.
-    let c = if Path::new(&format!("{db}-wal")).exists() {
-        Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY)
-    } else {
-        let real = fs::canonicalize(&db)?.to_str().context("non-UTF-8 --db")?.replace('%', "%25").replace('?', "%3f").replace('#', "%23");
-        Connection::open_with_flags(format!("file:{real}?immutable=1"), OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI)
-    }?;
+    let c = open_ro(&db)?;
     let mut rows: HashMap<String, (i64, i64, Option<String>)> = HashMap::new();
     let mut right_units: HashMap<(String, String), Vec<String>> = HashMap::new();
     let mut live_lower: HashSet<String> = HashSet::new();
@@ -243,20 +254,20 @@ fn plan(args: &[String]) -> Result<()> {
 }
 
 /// A file as the plan or the journal states it: (size, mtime_ns, device, inode) if it is a regular file.
-fn stat(path: &str) -> Option<(i64, i64, i64, i64)> {
+pub(crate) fn stat(path: &str) -> Option<(i64, i64, i64, i64)> {
     match crate::lstat(Path::new(path)) {
         Some((false, id, dev)) => Some((id.size, id.mtime_ns, dev, id.ino)),
         _ => None,
     }
 }
 
-enum Step {
+pub(crate) enum Step {
     Rename,
     Made,
 }
 
 /// What to do for one rename FROM -> TO of a file of SIZE and MTIME, or why not.
-fn step(db: &Connection, from: &str, to: &str, size: i64, mtime: i64) -> Result<Result<Step, String>> {
+pub(crate) fn step(db: &Connection, from: &str, to: &str, size: i64, mtime: i64) -> Result<Result<Step, String>> {
     let row = |path: &str| -> Result<Option<(i64, i64, bool)>> {
         let mut st = db.prepare_cached("SELECT size, mtime_ns, gone FROM files WHERE path=?1")?;
         let mut q = st.query([path])?;
@@ -285,7 +296,7 @@ fn step(db: &Connection, from: &str, to: &str, size: i64, mtime: i64) -> Result<
 }
 
 /// The index row of FROM, with its metadata and earlier versions, moved to TO.
-fn repath(tx: &Transaction, from: &str, to: &str) -> Result<()> {
+pub(crate) fn repath(tx: &Transaction, from: &str, to: &str) -> Result<()> {
     if tx.query_row("SELECT count(*) FROM files WHERE path=?1 AND gone=0", [from], |r| r.get::<_, i64>(0))? == 0 {
         return Ok(()); // already moved
     }
@@ -298,7 +309,7 @@ fn repath(tx: &Transaction, from: &str, to: &str) -> Result<()> {
     Ok(())
 }
 
-fn open_index(db_path: &str) -> Result<Connection> {
+pub(crate) fn open_index(db_path: &str) -> Result<Connection> {
     if !Path::new(db_path).is_file() {
         bail!("no index at {db_path}");
     }
@@ -309,9 +320,10 @@ fn open_index(db_path: &str) -> Result<Connection> {
     Ok(db)
 }
 
-fn apply(args: &[String]) -> Result<()> {
+pub(crate) fn apply(args: &[String]) -> Result<()> {
     let (plan_path, db_path) = (need(args, "--plan")?, need(args, "--db")?);
     let journal_path = get(args, "--journal").unwrap_or_else(|| format!("{plan_path}.journal"));
+    let how = How { files: true, force: false, prune: args.iter().any(|a| a == "--prune-empty") };
     let text = fs::read_to_string(&plan_path).with_context(|| format!("no plan at {plan_path}"))?;
     let mut lines = text.lines();
     let head = fields(lines.next().unwrap_or(""), 3, &plan_path)?;
@@ -331,23 +343,49 @@ fn apply(args: &[String]) -> Result<()> {
         }
         units.last_mut().unwrap().1.push((format!("{root}/{}", f[1]), format!("{root}/{}", f[2]), f[3].parse()?, f[4].parse()?));
     }
-    let mut db = open_index(&db_path)?;
-    let known = fs::read_to_string(&journal_path).unwrap_or_default();
-    let mut journal = fs::OpenOptions::new().create(true).append(true).open(&journal_path)?;
+    execute(&db_path, &journal_path, &root, &units, how)
+}
+
+/// How a set of moves is carried out.
+#[derive(Clone, Copy)]
+pub(crate) struct How {
+    /// Rename on disk; otherwise only the index rows move, for files already at their new paths.
+    pub files: bool,
+    /// Without `files`: move the rows of files that are not at their new paths too.
+    pub force: bool,
+    /// Afterwards remove the folders the renames emptied.
+    pub prune: bool,
+}
+
+/// The moves of UNITS, each (name, [(from, to, size, mtime_ns)]) with absolute
+/// paths under ROOT: checked, journalled and made unit by unit, the index following.
+pub(crate) fn execute(db_path: &str, journal_path: &str, root: &str, units: &[(String, Vec<(String, String, i64, i64)>)], how: How) -> Result<()> {
+    let How { files, force, prune } = how;
+    let root = root.to_string();
+    let mut left: HashSet<String> = HashSet::new();
+    let mut db = open_index(db_path)?;
+    let known = fs::read_to_string(journal_path).unwrap_or_default();
+    let mut journal = fs::OpenOptions::new().create(true).append(true).open(journal_path)?;
     match known.lines().next() {
         None => writeln!(journal, "{JOURNAL}\t1\t{root}")?,
         Some(h) if h == format!("{JOURNAL}\t1\t{root}") => {}
         Some(_) => bail!("{journal_path} is not the journal of a plan for {root}"),
     }
     let total: usize = units.iter().map(|(_, m)| m.len()).sum();
-    eprintln!("conform: {total} files in {} units under {root}; journal {journal_path}", units.len());
+    eprintln!("{total} files in {} units under {root}; journal {journal_path}", units.len());
     let (mut renamed, mut made, mut refused_units, mut refused_files, mut done_units) = (0u64, 0u64, 0u64, 0u64, 0u64);
     let (t0, mut last) = (Instant::now(), Instant::now());
-    for (unit, members) in &units {
+    for (unit, members) in units {
         let mut steps = Vec::new();
         let mut refusal = None;
         for (from, to, size, mtime) in members {
-            match step(&db, from, to, *size, *mtime)? {
+            // Index only: a file must already be at its new path, unless forced.
+            let s = match step(&db, from, to, *size, *mtime)? {
+                Ok(Step::Rename) if !files && !force => Err(format!("{from} is not at {to} yet (--files moves it, --force moves its row anyway)")),
+                Ok(Step::Rename) | Err(_) if !files && force => Ok(Step::Made),
+                s => s,
+            };
+            match s {
                 Ok(s) => steps.push(s),
                 Err(e) => { refusal = Some(e); break; }
             }
@@ -388,6 +426,9 @@ fn apply(args: &[String]) -> Result<()> {
                 Step::Rename => {
                     fs::rename(from, to).with_context(|| format!("renaming {from} to {to}; stopped, run apply again or undo"))?;
                     renamed += 1;
+                    if prune && let Some(p) = Path::new(from).parent().and_then(Path::to_str) {
+                        left.insert(p.to_string());
+                    }
                 }
                 Step::Made => made += 1,
             }
@@ -404,15 +445,33 @@ fn apply(args: &[String]) -> Result<()> {
                       done_units + refused_units, units.len());
         }
     }
-    eprintln!("done: {renamed} files renamed in place, {made} already renamed by an earlier run, {done_units} units; \
-               {refused_units} units refused ({refused_files} files), left as they were");
+    // Folders the renames emptied, deepest first, and their parents while those are empty too.
+    let mut pruned = 0u64;
+    let mut left: Vec<String> = left.into_iter().collect();
+    left.sort_by_key(|d| std::cmp::Reverse(d.matches('/').count()));
+    for d in left {
+        let mut d = Path::new(&d);
+        while d != Path::new(&root) && d.starts_with(&root) && fs::remove_dir(d).is_ok() {
+            writeln!(journal, "rmdir\t{}", d.display())?;
+            pruned += 1;
+            match d.parent() { Some(p) => d = p, None => break }
+        }
+    }
+    journal.sync_data()?;
+    if files {
+        eprintln!("done: {renamed} files renamed in place, {made} already renamed by an earlier run, {done_units} units; \
+                   {refused_units} units refused ({refused_files} files), left as they were{}",
+                  if prune { format!("; {pruned} emptied folders removed") } else { String::new() });
+    } else {
+        eprintln!("done: {made} index rows moved, no file touched; {refused_units} refused ({refused_files} files), left as they were");
+    }
     if refused_units > 0 {
         bail!("{refused_units} units were refused");
     }
     Ok(())
 }
 
-fn undo(args: &[String]) -> Result<()> {
+pub(crate) fn undo(args: &[String]) -> Result<()> {
     let (journal_path, db_path) = (need(args, "--journal")?, need(args, "--db")?);
     let text = fs::read_to_string(&journal_path).with_context(|| format!("no journal at {journal_path}"))?;
     let head = fields(text.lines().next().unwrap_or(""), 3, &journal_path)?;
@@ -427,6 +486,7 @@ fn undo(args: &[String]) -> Result<()> {
         for line in chunk.iter().rev() {
             let f: Vec<&str> = line.split('\t').collect();
             match f.as_slice() {
+                ["rmdir", dir] => fs::create_dir_all(dir)?, // one that apply removed when it was emptied
                 ["mkdir", dir] => folders += fs::remove_dir(dir).is_ok() as u64, // only if empty
                 ["move", from, to, size, mtime] => match step(&tx, to, from, size.parse()?, mtime.parse()?)? {
                     Ok(Step::Rename) => {

@@ -151,6 +151,25 @@ target, or its new name is taken. `apply` checks every file against the plan,
 journals each rename before making it and moves the index rows along, so the
 next run reads nothing again. `undo` replays the journal backwards.
 
+
+## Setting aside what another tree lacks
+
+`phindex diff` lists the files of one tree that are at no path of another, with
+where their content stands there (`copy`, `variant`, `only-left`), from the two
+indexes alone. `phindex mv` moves a listed set, one file or a folder's subtree,
+and the index rows follow:
+
+```sh
+./target/release/phindex diff --left new.sqlite --left-root /new/foto --right old.sqlite --right-root /old/foto --out diff/
+./target/release/phindex mv --db new.sqlite --files --list diff/diff.tsv --to /new/review   # --limit N for a trial
+./target/release/phindex mv undo --journal diff/diff.tsv.journal --db new.sqlite
+./target/release/phindex mv --db new.sqlite [--files] SRC DST                               # one file or folder
+```
+
+Without `--files`, `mv` moves only the index rows, after checking that every
+file is already at its new path (`--force` skips the check). With `--files` it
+renames on disk too, never copies, and journals each rename first.
+
 ## Queries
 
 ```sql
@@ -180,4 +199,4 @@ SELECT a.path, b.path FROM files a JOIN files b
 The phindex source is MIT. The binaries link rawler (LGPL-2.1), for the Lightroom
 fingerprint, and exiftool-rs (GPL-3.0-or-later), for metadata, so built binaries
 are covered by the GPL. phindex reads the indexed tree and writes its SQLite file;
-only `conform` changes the tree, by renaming.
+only `conform` and `mv --files` change the tree, by renaming.

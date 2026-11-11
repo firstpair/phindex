@@ -9,6 +9,8 @@
 //!   phindex restore --db INDEX.sqlite (--path FILE [--sha256 HEX] | --sha256 HEX) --out FILE [--from EDITED]
 //!   phindex import-skeletons --db INDEX.sqlite --from SKELETONS.sqlite3                                (see import.rs)
 //!   phindex conform plan|apply|undo ...                                                                (see conform.rs)
+//!   phindex diff --left A.sqlite --left-root DIR --right B.sqlite --right-root DIR --out DIFF_DIR      (see diff.rs)
+//!   phindex mv --db INDEX.sqlite [--files] [--force] (SRC DST | --list DIFF.tsv --to DIR) | mv undo ...  (see mv.rs)
 //!
 //! Each file read records SHA-256, DNG raw blocks, Lightroom's fingerprint
 //! (supported DNGs), the metadata digest and compacted record, and the tiffgraph
@@ -34,7 +36,9 @@
 
 mod align;
 mod conform;
+mod diff;
 mod import;
+mod mv;
 mod restore;
 
 use anyhow::{Context, Result, bail};
@@ -559,6 +563,8 @@ fn main() -> Result<()> {
         Some("versions") => return restore::versions(&args[2..]),
         Some("restore") => return restore::run(&args[2..]),
         Some("conform") => return conform::run(&args[2..]),
+        Some("diff") => return diff::run(&args[2..]),
+        Some("mv") => return mv::run(&args[2..]),
         Some("import-skeletons") => return import::run(&args[2..]),
         _ => {}
     }

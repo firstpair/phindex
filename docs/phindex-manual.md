@@ -2,9 +2,11 @@
 
 This manual is by Alexy Khrabrov, with Claude as co-author. The ideas and decisions are Alexy's; Claude wrote the text and the code with him.
 
-It describes phindex 0.6.0 as of 2026-11-10: the Rust binary `phindex` and its OCaml counterpart `phindex-ox`, which runs under stock OCaml 5 and under OxCaml. phindex is licensed under the MIT License; the binaries link code under other licences, as the chapter on licences explains. Its source is at [github.com/firstpair/phindex](https://github.com/firstpair/phindex).
+It describes phindex 0.7.0 as of 2026-11-10: the Rust binary `phindex` and its OCaml counterpart `phindex-ox`, which runs under stock OCaml 5 and under OxCaml. phindex is licensed under the MIT License; the binaries link code under other licences, as the chapter on licences explains. Its source is at [github.com/firstpair/phindex](https://github.com/firstpair/phindex).
 
-0.6.0 adds `phindex diff`, which lists the files of one tree that are at no path of another, and `phindex mv`, which moves a listed set, a file or a folder with the index following: only the index rows by default, the files too with `--files`. Together they set aside what another tree lacks.
+0.7.0 adds `phindex adopt`, which gives files copied from another indexed tree their rows from that tree's index, without opening them.
+
+0.6.0 added `phindex diff`, which lists the files of one tree that are at no path of another, and `phindex mv`, which moves a listed set, a file or a folder with the index following: only the index rows by default, the files too with `--files`. Together they set aside what another tree lacks.
 
 0.5.0 added `phindex conform`, which renames the aligned files of one tree to the names they have in another, in place, with a plan to review first, a journal and an undo. It is the first command that changes an indexed tree, and it changes only names. It also adds `import-skeletons`, which fills an index from a skeleton store without opening a file. The revision stamp is unchanged, so an index written by 0.4.0 is current.
 
@@ -375,6 +377,23 @@ For each row at the previous revision whose SHA-256 the store has, this copies t
 - **What it reads and writes.** The store is opened read-only and immutable. Only the index is written. Another index's `skeletons` table serves as a store too, so one index can be filled from another.
 
 Stop any indexer writing the same index first, as for any second writer.
+
+## Rows for copies, from the other tree's index
+
+After a synchronizer has copied files from one indexed tree into another, every copy is new to the receiving index, and an ordinary run would read each in full. The sending tree's index already holds what that read would find. `adopt` takes it from there:
+
+```sh
+phindex adopt --db new.sqlite --root /new/foto --from old.sqlite --from-root /old/foto
+```
+
+For each file the other index lists under `--from-root`, `adopt` looks at the same relative path under `--root`. Where this index has no current row and the file there has the size and modification time the other index has for its own file, the row is written from the other index: SHA-256, every identity, the metadata record and the skeleton, with this file's own inode and device. No file of either tree is opened, so half a terabyte of copies is indexed in the time it takes to stat them.
+
+- **The evidence is path, size and modification time.** The copy must have been made with times kept. A volume that keeps whole seconds is allowed for: a time equal to the other one cut to the second counts as equal. This is the trust the incremental run itself places in size and time; `adopt` does not hash anything to confirm it.
+- **What does not qualify is left alone.** A file with another size or time, a path with no file, and a file the other index has not read are counted and left for an ordinary run, which reads what it must.
+- **A replaced file keeps its earlier content.** If this index knew another content at the path, that content is listed in `versions`, as an ordinary run would list it, and `restore` rebuilds it from the new file.
+- **The metadata record is the other file's**, with the folder it names changed to this tree's. Its file-system dates remain those the other index saw.
+
+Run `adopt` after the synchronization and before the next ordinary run. That run then finds the adopted rows current and reads only what `adopt` left.
 
 ## The quick walk
 
@@ -953,6 +972,8 @@ The tests in [`rust/tests/skeletons.rs`](../rust/tests/skeletons.rs) build small
 
 The tests in [`rust/tests/conform.rs`](../rust/tests/conform.rs) align two trees and conform the right one. The plan holds the moved unit with its extra sidecar, the renamed unit whose raw was edited, the suffix that differs only in letter case and the unit that belongs in a folder not yet there, and skips the split unit, the one with a duplicate, the one whose name is taken and the two that share a target. After `apply` the files have the same inodes and index rows under their new paths, an indexing run reads nothing and finds nothing moved, and a second alignment shows the units under their left names. A second `apply` and a second `undo` change nothing, and `undo` restores every name and removes the folders it had created. A unit with a file edited after the plan, or with its destination taken since, is left whole.
 
+The test in [`rust/tests/adopt.rs`](../rust/tests/adopt.rs) copies files from one indexed tree into another with their times kept: a replacement, two new files and one copy whose time was not kept. `adopt` writes three rows equal to the other index's in every identity, with this tree's inodes and folder, copies their skeletons, lists the replaced content as a version that `restore` rebuilds, and leaves the fourth file; the next ordinary run reads that one file only.
+
 The tests in [`rust/tests/mv.rs`](../rust/tests/mv.rs) cover `diff` and `mv`. Two trees share one file, differ in the metadata of a second and in a sidecar, and the left one has a copy, a variant and two files of its own at paths the right one lacks. `diff` gives each file its state and lists the four. Without `--files` the list is refused, since no file has been moved. With `--files`, a trial of two and then the rest move the files, the emptied folders are removed, the index rows are at the new paths, indexing either folder reads nothing, and a second `diff` lists nothing; `undo` puts everything back. A second test moves one file and one folder: rows only after the file was moved by hand, rows only by `--force`, the file too with `--files`, a folder's subtree by one rename, and a refusal to merge into an existing folder.
 
 The test in [`rust/tests/align.rs`](../rust/tests/align.rs) is the worked example of the previous chapter: it checks every unit's kind, status, flags and target, the tiers of `IMG_2`, the two image pairs, the one partner pair and the right-only units.
@@ -976,7 +997,7 @@ Built phindex and phindex-ox binaries are therefore covered by the GPL. phindex 
 
 | Item | Value |
 | --- | --- |
-| Version | 0.6.0 |
+| Version | 0.7.0 |
 | Revision stamp | `phidentify 0.1.0 +lightroom +metadata; tiffgraph dng-xmp/0,1,2 max_xmp=1MiB; SDE/0-preserved; image-data/1` |
 | Upgraded without a full read | rows of the stamp without `; image-data/1` |
 | Metadata engine label | `exiftool-rs (via phidentify)` |
@@ -995,6 +1016,7 @@ Built phindex and phindex-ox binaries are therefore covered by the GPL. phindex 
 | `align` report | `summary.json` (also on stdout), `units.tsv`, `files.tsv`, `right-only.tsv`, `dng-pairs.tsv`, `image-pairs.tsv`, `partner-pairs.tsv` |
 | `align` progress | stderr: each stage with counts and seconds, a line every 5 s within a stage; names beginning with a dot left out |
 | `conform` | `plan` (report and right index to `plan.tsv`, `skipped.tsv`; `--limit N` files for a trial), `apply` (renames in place, journal `PLAN.journal`, index rows follow), `undo`; whole units only; skips `split`, `duplicates`, `target-shared`, `not-indexed`, `not-in-index`, `destination-taken` |
+| `adopt` | rows for copies from another index: same relative path, size and modification time (whole seconds allowed); no file opened |
 | `diff` | left files by state: `same`, `same-image`, `changed`, `unread`, `copy`, `variant`, `only-left`, `unknown`; `diff.tsv` lists `--states` (default: the last four), `summary.json` |
 | `mv` | `SRC DST` (a file or a folder's subtree) or `--list DIFF.tsv --to DIR`; index rows only, or the files too with `--files`; `--force`, `--limit N`, `--prune-empty`, `--journal FILE`; `mv undo` |
 | Runner | `scripts/phindex-run.sh [--ox] [--log FILE] --db INDEX --root DIR [options]`: this checkout's build, `caffeinate -i`, appended log, one writer per index |

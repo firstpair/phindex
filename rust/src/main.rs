@@ -9,6 +9,7 @@
 //!   phindex restore --db INDEX.sqlite (--path FILE [--sha256 HEX] | --sha256 HEX) --out FILE [--from EDITED]
 //!   phindex import-skeletons --db INDEX.sqlite --from SKELETONS.sqlite3                                (see import.rs)
 //!   phindex conform plan|apply|undo ...                                                                (see conform.rs)
+//!   phindex adopt --db INDEX.sqlite --root DIR --from OTHER.sqlite --from-root DIR                      (see adopt.rs)
 //!   phindex diff --left A.sqlite --left-root DIR --right B.sqlite --right-root DIR --out DIFF_DIR      (see diff.rs)
 //!   phindex mv --db INDEX.sqlite [--files] [--force] (SRC DST | --list DIFF.tsv --to DIR) | mv undo ...  (see mv.rs)
 //!
@@ -34,6 +35,7 @@
 //! A new path whose device, inode, size and mtime equal a vanished, fully
 //! identified row inherits its identities (moves and renames) without a read.
 
+mod adopt;
 mod align;
 mod conform;
 mod diff;
@@ -563,6 +565,7 @@ fn main() -> Result<()> {
         Some("versions") => return restore::versions(&args[2..]),
         Some("restore") => return restore::run(&args[2..]),
         Some("conform") => return conform::run(&args[2..]),
+        Some("adopt") => return adopt::run(&args[2..]),
         Some("diff") => return diff::run(&args[2..]),
         Some("mv") => return mv::run(&args[2..]),
         Some("import-skeletons") => return import::run(&args[2..]),

@@ -1,6 +1,6 @@
 opam-version: "2.0"
 name: "phindex"
-version: "0.6.0"
+version: "0.7.0"
 synopsis: "phindex-ox: the OCaml/OxCaml photo-identity indexer"
 description: """
 The OCaml and OxCaml implementation of phindex. It writes the same SQLite index,
